@@ -15,17 +15,18 @@ import type { Context } from '@deepseek-ai/cordis'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
-import { OmoRoleRegistry } from './omo-role-registry.ts'
-import type { OmoRoleRegistryFace } from './omo-role-registry.ts'
-import { OMO_DEFAULT_ROLE, OMO_ROLES, isOmoRole } from './core/omo-roles.ts'
-import type { OmoModelSelection } from './core/omo-roles.ts'
+import { OmoRoleRegistry } from './omo-role-registry_en.ts'
+import type { OmoRoleRegistryFace } from './omo-role-registry_en.ts'
+import { OMO_DEFAULT_ROLE, OMO_ROLES, isOmoRole } from './core/omo-roles_en.ts'
+import type { OmoModelSelection } from './core/omo-roles_en.ts'
+import { expandOmoPath, importOmoJson, OMO_JSON_DEFAULT_PATH, readOmoJsonFile } from './core/omo-json_en.ts'
 
-export { OmoRoleRegistry } from './omo-role-registry.ts'
-export type { OmoRoleRegistryFace } from './omo-role-registry.ts'
-export { OMO_DEFAULT_ROLE, OMO_ROLES, emptyRoleConfig, isOmoRole, normalizeOmoRole } from './core/omo-roles.ts'
-export type { OmoModelSelection, OmoRoleConfig, OmoRoleSettings } from './core/omo-roles.ts'
-export { detectDshCompat } from './core/dsh-capabilities.ts'
-export type { DshCompat } from './core/dsh-capabilities.ts'
+export { OmoRoleRegistry } from './omo-role-registry_en.ts'
+export type { OmoRoleRegistryFace } from './omo-role-registry_en.ts'
+export { OMO_DEFAULT_ROLE, OMO_ROLES, emptyRoleConfig, isOmoRole, normalizeOmoRole } from './core/omo-roles_en.ts'
+export type { OmoModelSelection, OmoRoleConfig, OmoRoleSettings } from './core/omo-roles_en.ts'
+export { detectDshCompat } from './core/dsh-capabilities_en.ts'
+export type { DshCompat } from './core/dsh-capabilities_en.ts'
 
 /** Cordis plugin name. */
 export const name = 'opencode-omo'
@@ -40,6 +41,8 @@ export const OMO_ROLE_SETTINGS_NAMESPACE = 'opencode-omo-roles'
 export const ROLES_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/roles'
 export const ROLE_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/role'
 export const ROLE_CONFIG_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/role-config'
+export const OMO_JSON_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/omo-json'
+export const OMO_JSON_IMPORT_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/omo-json/import'
 
 const modelSelectionSchema = z.object({
   provider: z.string(),
@@ -61,13 +64,17 @@ const roleConfigSchema = z.object({
 const SettingsSchema = z.object({
   roles: z.dict(roleConfigSchema).default({}),
   sessions: z.dict(z.string()).default({}),
-  // Schema parity with the English entry: the omo.json keys are declared here
-  // so settings written by the General tab survive switching variants.
   omoJson: z.object({
     enabled: z.boolean().default(false),
-    path: z.string().default('~/.omo/omo.json'),
-  }).default({ enabled: false, path: '~/.omo/omo.json' }),
+    path: z.string().default(OMO_JSON_DEFAULT_PATH),
+  }).default({ enabled: false, path: OMO_JSON_DEFAULT_PATH }),
 })
+
+/** Reject non-string, empty, or absurdly long omo.json paths. */
+function cleanOmoPath(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.trim() === '' || value.length > 1024) return undefined
+  return value.trim()
+}
 
 /** Read a request body as UTF-8 text. */
 function readBody(req: IncomingMessage): Promise<string> {
@@ -234,10 +241,92 @@ export function apply(ctx: Context): void {
       },
     })
 
+    const disposeOmoJson = ctx.webServer.register({
+      kind: 'exact',
+      path: OMO_JSON_ENDPOINT,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'GET' || req.method === 'HEAD') {
+          const { enabled, path } = scope.get().omoJson
+          sendJson(res, 200, { ok: true, enabled, path })
+          return
+        }
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { ok: false, error: 'method not allowed' })
+          return
+        }
+        let body: { enabled?: unknown; path?: unknown }
+        try {
+          body = JSON.parse(await readBody(req)) as { enabled?: unknown; path?: unknown }
+        } catch {
+          sendJson(res, 400, { ok: false, error: 'invalid json' })
+          return
+        }
+        const current = scope.get().omoJson
+        const next = {
+          enabled: typeof body.enabled === 'boolean' ? body.enabled : current.enabled,
+          path: body.path === undefined ? current.path : (cleanOmoPath(body.path) ?? current.path),
+        }
+        if (body.path !== undefined && cleanOmoPath(body.path) === undefined) {
+          sendJson(res, 400, { ok: false, error: 'path must be a non-empty string of at most 1024 characters' })
+          return
+        }
+        await scope.update({ omoJson: next })
+        // Turning the toggle ON imports immediately (non-fatal, like the button).
+        if (next.enabled && !current.enabled) {
+          void importOmoJson(readOmoJsonFile, roles, expandOmoPath(next.path)).catch((error: unknown) => {
+            console.warn(`[opencode-omo] omo.json import failed: ${String(error)}`)
+          })
+        }
+        sendJson(res, 200, { ok: true, ...next })
+      },
+    })
+
+    const disposeOmoJsonImport = ctx.webServer.register({
+      kind: 'exact',
+      path: OMO_JSON_IMPORT_ENDPOINT,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { ok: false, error: 'method not allowed' })
+          return
+        }
+        let body: { path?: unknown }
+        try {
+          body = JSON.parse(await readBody(req)) as { path?: unknown }
+        } catch {
+          sendJson(res, 400, { ok: false, error: 'invalid json' })
+          return
+        }
+        const requested = body.path === undefined ? scope.get().omoJson.path : cleanOmoPath(body.path)
+        if (requested === undefined) {
+          sendJson(res, 400, { ok: false, error: 'path must be a non-empty string of at most 1024 characters' })
+          return
+        }
+        const result = await importOmoJson(readOmoJsonFile, roles, expandOmoPath(requested))
+        sendJson(res, 200, result)
+      },
+    })
+
+    // Startup auto-import: when the toggle is ON, apply the configured file
+    // once the registry fiber is up. Never fatal; a missing file just logs.
+    {
+      const { enabled, path } = scope.get().omoJson
+      if (enabled) {
+        void importOmoJson(readOmoJsonFile, roles, expandOmoPath(path)).then((result) => {
+          if (!result.ok || result.errors.length > 0) {
+            console.warn(`[opencode-omo] startup omo.json import: ${JSON.stringify(result)}`)
+          }
+        }).catch((error: unknown) => {
+          console.warn(`[opencode-omo] startup omo.json import failed: ${String(error)}`)
+        })
+      }
+    }
+
       return () => {
         disposeRoles()
         disposeRole()
         disposeRoleConfig()
+        disposeOmoJson()
+        disposeOmoJsonImport()
       }
     }, 'opencode-omo: role routes')
   })

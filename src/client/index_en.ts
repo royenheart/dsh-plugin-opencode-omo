@@ -5,7 +5,7 @@
  * - `conversation.input.left`: the omo agent-type picker in the composer's
  *   existing left tool-row slot (opencode-omo sessions only; no dsh-side
  *   composer seat required);
- * - `settings.section`: the global "角色设置" page in the dsh settings panel,
+ * - `settings.section`: the global "Role Settings" page in the dsh settings panel,
  *   where each omo role's primary model and fallback models are configured.
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -16,20 +16,24 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the settings.section SlotMap declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-client-connection/client'
-import { RoleSelect } from './RoleSelect.tsx'
-import type { RoleSelectInjected } from './RoleSelect.tsx'
-import { OmoSettingsSection } from './OmoSettingsSection.tsx'
-import type { OmoSettingsSectionProps } from './OmoSettingsSection.tsx'
-import { RoleSettingsSection } from './RoleSettings.tsx'
-import type { RoleSettingsInjected } from './RoleSettings.tsx'
+import { RoleSelect } from './RoleSelect_en.tsx'
+import type { RoleSelectInjected } from './RoleSelect_en.tsx'
+import { OmoSettingsSection } from './OmoSettingsSection_en.tsx'
+import type { OmoSettingsSectionProps } from './OmoSettingsSection_en.tsx'
+import { RoleSettingsSection } from './RoleSettings_en.tsx'
+import type { RoleSettingsInjected } from './RoleSettings_en.tsx'
+import { GeneralSettingsSection } from './GeneralSettings_en.tsx'
+import type { GeneralSettingsInjected } from './GeneralSettings_en.tsx'
 import type { OmoCatalogModel } from './omo-wire.ts'
 import type {} from './slots.ts'
-export { RoleSelect } from './RoleSelect.tsx'
-export type { RoleSelectInjected, RoleSelectProps } from './RoleSelect.tsx'
-export { OmoSettingsSection } from './OmoSettingsSection.tsx'
-export type { OmoSettingsSectionProps } from './OmoSettingsSection.tsx'
-export { RoleSettingsSection } from './RoleSettings.tsx'
-export type { RoleSettingsInjected, RoleSettingsProps } from './RoleSettings.tsx'
+export { RoleSelect } from './RoleSelect_en.tsx'
+export type { RoleSelectInjected, RoleSelectProps } from './RoleSelect_en.tsx'
+export { OmoSettingsSection } from './OmoSettingsSection_en.tsx'
+export type { OmoSettingsSectionProps } from './OmoSettingsSection_en.tsx'
+export { RoleSettingsSection } from './RoleSettings_en.tsx'
+export type { RoleSettingsInjected, RoleSettingsProps } from './RoleSettings_en.tsx'
+export { GeneralSettingsSection } from './GeneralSettings_en.tsx'
+export type { GeneralSettingsInjected } from './GeneralSettings_en.tsx'
 
 /** Cordis plugin name. */
 export const name = 'opencode-omo-client'
@@ -40,6 +44,8 @@ export const inject = ['slots', 'connection']
 export const ROLES_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/roles'
 export const ROLE_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/role'
 export const ROLE_CONFIG_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/role-config'
+export const OMO_JSON_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/omo-json'
+export const OMO_JSON_IMPORT_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/omo-json/import'
 
 /** Minimal shape of the rc.2 `llm.models` catalog payload. The published
  * `@deepseek-ai/dsh-client-connection` ships no `.d.ts`, so these callbacks
@@ -122,11 +128,22 @@ export function apply(ctx: Context): void {
       },
     }, OmoSettingsSection))
 
+    const disposeGeneralTab = ctx.slots.inject('opencode-omo.settings.tab', () => ctx.slots.register({
+      name: 'opencode-omo.settings.tab',
+      id: 'general',
+      order: 0,
+      label: () => 'General',
+      inject: (): GeneralSettingsInjected => ({
+        omoJsonEndpoint: OMO_JSON_ENDPOINT,
+        omoJsonImportEndpoint: OMO_JSON_IMPORT_ENDPOINT,
+      }),
+    }, GeneralSettingsSection))
+
     const disposeSettingsTab = ctx.slots.inject('opencode-omo.settings.tab', () => ctx.slots.register({
       name: 'opencode-omo.settings.tab',
       id: 'roles',
-      order: 0,
-      label: () => '角色设置',
+      order: 1,
+      label: () => 'Role Settings',
       inject: (): RoleSettingsInjected => ({
         rolesEndpoint: ROLES_ENDPOINT,
         roleConfigEndpoint: ROLE_CONFIG_ENDPOINT,
@@ -137,6 +154,7 @@ export function apply(ctx: Context): void {
     return () => {
       disposeRole()
       disposeSettingsTab()
+      disposeGeneralTab()
       disposeSettings()
     }
   }, 'opencode-omo-client: role slots')

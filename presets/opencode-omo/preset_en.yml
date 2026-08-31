@@ -1,0 +1,3 @@
+name: opencode-omo
+description: "Replicates the opencode + omo (oh-my-openagent) behavior mode: opencode's toolchain and complete system prompt, plus omo multi-role orchestration (sisyphus/plan builder/plan executor primary roles + oracle/librarian/explore/metis/momus/looker specialists), composer role selection, per-role model/fallback configuration, and AGENTS.md context injection."
+order: 5

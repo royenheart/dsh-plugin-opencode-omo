@@ -1,0 +1,72 @@
+# Example llm-pi-ai provider configuration for the omo.json import.
+#
+# Copy the `providers` entries below into your DSH config file
+# (~/.dsh/settings.yaml) under the existing `llm-pi-ai:` section, so the
+# models referenced by a real oh-my-openagent omo.json resolve at request
+# time. These four providers are the ones the shipped omo.json example
+# (see the project README) uses beyond the built-in catalog.
+#
+# baseURL values are the vendors' real OpenAI-compatible endpoints:
+#   - apiyi:          https://api.apiyi.com/v1
+#                     (API易; alternate mirrors: api-cf.apiyi.com/v1,
+#                      b.apiyi.com/v1, vip.apiyi.com/v1)
+#   - zai-coding-plan: https://api.z.ai/api/coding/paas/v4
+#                     (Z.AI coding-plan subscription endpoint; a standard
+#                      Z.AI key uses https://api.z.ai/api/paas/v4 instead)
+#   - moonshotai:     https://api.moonshot.ai/v1
+#                     (Moonshot AI / Kimi, international endpoint; the
+#                      China endpoint is https://api.moonshot.cn/v1)
+#   - minimax:        https://api.minimax.chat/v1
+#                     (MiniMax, international OpenAI-compatible endpoint)
+#
+# apiKeyEnv names an environment variable you must still set with your
+# own key (e.g. `export APIYI_API_KEY=...`) — the example never ships keys.
+#
+# YAML is valid as-is; paste under `llm-pi-ai:` and restart dsh.
+llm-pi-ai:
+  providers:
+    apiyi:
+      displayName: apiyi
+      apiKeyEnv: APIYI_API_KEY
+      api: openai-completions
+      baseURL: https://api.apiyi.com/v1
+      models:
+        - id: gpt-5.6-sol
+          contextWindow: 1000000
+          maxTokens: 8192
+        - id: gpt-5.6-terra
+          contextWindow: 1000000
+          maxTokens: 8192
+    zai-coding-plan:
+      displayName: zai-coding-plan
+      apiKeyEnv: ZAI_CODING_PLAN_API_KEY
+      api: openai-completions
+      baseURL: https://api.z.ai/api/coding/paas/v4
+      models:
+        - id: glm-5.3
+          contextWindow: 1000000
+          maxTokens: 8192
+        - id: glm-5.3-flash
+          contextWindow: 1000000
+          maxTokens: 8192
+    moonshotai:
+      displayName: moonshotai
+      apiKeyEnv: MOONSHOTAI_API_KEY
+      api: openai-completions
+      baseURL: https://api.moonshot.ai/v1
+      models:
+        - id: kimi-k2.7-code
+          contextWindow: 1000000
+          maxTokens: 8192
+        - id: kimi-k3
+          contextWindow: 1000000
+          maxTokens: 8192
+    minimax:
+      displayName: minimax
+      apiKeyEnv: MINIMAX_API_KEY
+      api: openai-completions
+      baseURL: https://api.minimax.chat/v1
+      models:
+        - id: MiniMax-M3
+          contextWindow: 1000000
+          maxTokens: 8192
