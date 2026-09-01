@@ -1,39 +1,56 @@
 # dsh-side patches
 
-**This directory no longer ships a patch.** The previous
-`0001-agent-pre-step-assistant-prefill.patch` is **removed** as of the 0.1.2-alpha.2
-retarget.
+This directory ships the minimal dsh-side change required by the documented
+opencode-omo complete surface. Everything else runs on native dsh seams.
 
-## Why it was deleted
+## `0001-agent-pre-step-assistant-prefill.patch`
 
-Official 0.1.2-alpha.2 `PreStepDecision` is still only
-`reject | { kind: 'enter'; messages: UserMessage[]; startsRequestSeries?: true }`.
-`agent/request` cannot mutate messages. A local assistant-prefill seam would
-fork the loop and the reconstructable-requests invariant for one preset.
+- **Why**: opencode ends the budget-limited last step with an
+  assistant-role `MAX_STEPS_PROMPT` continuation. dsh's `PreStepDecision`
+  only accepts `UserMessage[]`, and the plugin's complete-surface spec keeps
+  the assistant tail rather than demoting it to a system-prompt section.
+- **What**: adds optional `PreStepDecision.assistantPrefill`. The loop never
+  writes it as a session message; it appends it after the derived history for
+  that request and logs it on `request/header`. The reconstruction invariant
+  and token-meter fold the same field, so every model-visible byte remains
+  reconstructable and priced.
+- **Files**:
+  - `packages/core/agent/src/runtime-types.ts`
+  - `packages/core/agent-loop/src/agent.ts`
+  - `packages/core/agent-loop/src/invariant.ts`
+  - `packages/core/agent-loop/tests/interception.spec.ts`
+  - `packages/core/session/src/types.ts`
+  - `packages/core/session/src/request-header.ts`
+  - `packages/llm/token-meter/src/estimate.ts`
+  - `packages/extensions/tool-cordis/src/api-catalog.ts` (regenerated
+    Cordis API catalog so the public `EpochHeader`/`PreStepDecision`
+    declarations match the source)
+- **Baseline**: `dsh-v0.1.2-alpha.3` (tag, `dd6322d`). Alpha.3 has not
+  absorbed the seam; `PreStepDecision` is still `reject | enter` with user
+  messages only.
+- **Apply** (from a deepseek-harness checkout at the baseline):
 
-The supported plugin path is `ctx.systemPrompt.section` with the same
-`MAX_STEPS_PROMPT` text. That is now the default, not a temporary fallback
-users are asked to “fix” by patching dsh.
+  ```sh
+  git apply /path/to/dsh-plugin-opencode-omo/patches/0001-agent-pre-step-assistant-prefill.patch
+  pnpm install --frozen-lockfile
+  pnpm exec vitest run packages/core/agent-loop/tests/interception.spec.ts \
+    packages/core/agent-loop/tests/invariant.spec.ts \
+    packages/core/session packages/llm/token-meter
+  pnpm run gen-cordis-catalog -- --check
+  ```
 
-## Behavioral inconsistencies vs opencode (and vs the deleted patch)
+  Verified on this checkout: `interception.spec.ts` 24/24,
+  `invariant.spec.ts` 8/8, session and token-meter suites 396/396,
+  `tsc -b` for `dsh-agent`, `dsh-agent-loop`, `dsh-session`, and
+  `dsh-token-meter`, and `gen-cordis-catalog --check` reports all 97
+  generated files/regions up to date.
 
-Keep these in mind when comparing traces or benches:
+- **Patchless fallback**: without the patch the plugin still works, but the
+  same `MAX_STEPS_PROMPT` text degrades to a system-prompt section on the
+  ceiling step. The host registry detects the installed
+  `@deepseek-ai/dsh-agent-loop` marker and reports the degradation through
+  `/roles` and a one-shot browser Toast. That fallback is runtime survival,
+  not the documented product surface.
 
-1. **Role / position.** opencode appends the ceiling text as an **assistant**
-   continuation. Here it is a **system** prefix on that step. A model that
-   obeys “CRITICAL - MAXIMUM STEPS REACHED” more strongly as “its own last
-   line” may keep tool-calling longer, or wrap up more timidly, than opencode.
-2. **Token accounting.** The extra tokens sit in the system prompt, not in an
-   assistant message or `request/header` companion. Cache-key and billing
-   breakdowns will not match a patched-harness or opencode run.
-3. **Transcript cleanliness is the same.** Neither path writes a session
-   `assistant/message` or `user/message` for the ceiling text. Compaction and
-   stats still omit it.
-4. **No silent drop.** The ceiling still fires at `step >= maxSteps`. Only the
-   channel changed.
-5. **Optional leftover seam.** If a developer harness still contains
-   `assistantPrefill` in `@deepseek-ai/dsh-agent-loop`, the driver uses it.
-   That is not supported or documented as an install step.
-
-Upstream request for a general-purpose request-only assistant tail:
+Upstream feature request:
 https://github.com/deepseek-ai/deepseek-harness/discussions/2407

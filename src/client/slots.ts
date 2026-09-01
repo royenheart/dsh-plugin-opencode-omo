@@ -18,6 +18,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: { readonly session: unknown; readonly input: unknown }
     }
+    // 0.1.2 declares this seat from the settings shell package; keep a local
+    // mirror so the plugin typechecks against a pnpm-copied owner tree too.
+    // @ts-ignore - duplicate declaration is expected and harmless.
+    'settings.section': {
+      kind: 'list'
+      scope: 'root'
+      owner: { readonly close: unknown }
+    }
     /** Plugin-owned nested tab inside the opencode-omo settings section. */
     'opencode-omo.settings.tab': {
       kind: 'list'

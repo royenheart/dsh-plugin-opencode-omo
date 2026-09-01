@@ -3,7 +3,6 @@
  * bundle does not emit d.ts). Keep in sync with src/client/index.ts exports.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { OmoModelSelection } from '../core/omo-roles'
 
 export declare const name: string
@@ -15,7 +14,7 @@ export declare const ROLE_ENDPOINT: string
 export declare const ROLE_CONFIG_ENDPOINT: string
 
 export interface RoleSelectInjected {
-  readonly sessionId: SessionId
+  readonly sessionId: string
   readonly rolesEndpoint: string
   readonly roleEndpoint: string
   readonly selectModel: (selection: OmoModelSelection) => Promise<boolean>
