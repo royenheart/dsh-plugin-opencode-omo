@@ -13,9 +13,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   IconAgentPresetOutline16, IconChevronDownOutline14, IconWarningOutline16, Menu, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -24,9 +22,13 @@ import type { OmoModelSelection } from './omo-wire.ts'
 import { loadOmoRoles, postOmoRole, sessionAgentPreset } from './omo-wire.ts'
 import type { OmoRoleView } from './omo-wire.ts'
 
+/** Selector-hook shape used by the session standard kit (`useSessions`). */
+type UseSessions = <S>(selector: (state: SessionListState) => S) => S
+
 /** Injected face delivered by the composer-bar outlet. */
 export interface RoleSelectInjected {
-  readonly sessionId: SessionId
+  /** dsh slot runtime hands the session identity as a plain string. */
+  readonly sessionId: string
   readonly rolesEndpoint: string
   readonly roleEndpoint: string
   readonly selectModel: (selection: OmoModelSelection) => Promise<boolean>
@@ -37,7 +39,7 @@ export type RoleSelectProps = Partial<RoleSelectInjected> & {
   readonly locked?: boolean
   readonly session?: unknown
   readonly input?: unknown
-  readonly useSessions?: SnapshotSelectorHook<SessionListState>
+  readonly useSessions?: UseSessions
 }
 
 const OMO_PRESET = 'opencode-omo'
@@ -128,7 +130,7 @@ export function RoleSelect({
   const [notice, setNotice] = useState<{ seq: number; text: string } | null>(null)
   const noticeSeq = useRef(0)
 
-  const summary = useSessions?.(state => (sessionId === undefined ? undefined : state.byId[sessionId]))
+  const summary = useSessions?.(state => (sessionId === undefined ? undefined : state.byId[sessionId as keyof SessionListState['byId']]))
   const eligible = sessionAgentPreset(summary) === OMO_PRESET
 
   useEffect(() => { installTriggerStyles() }, [])

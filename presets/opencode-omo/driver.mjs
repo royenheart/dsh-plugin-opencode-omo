@@ -10,8 +10,8 @@
 //   (apply_patch vs edit/write) to the request's tool schemas.
 // - `agent/inbox/claimed` detects omo ultrawork keywords before assembly.
 // - `agent/pre-step` injects opencode's MAX_STEPS_PROMPT when a role's
-//   maxSteps ceiling is reached (system-prompt section on stock 0.1.2;
-//   assistant-role prefill only if a leftover local seam is still present).
+//   maxSteps ceiling is reached (assistant-role prefill on a patched
+//   harness; without the patch the same text rides a system-prompt section).
 // - `agent/request` / `agent/request-error` route through the role's primary
 //   model and advance the fallback chain, exactly like the previous subclass.
 // - Named specialist / task() children pin an omo role and keep this complete
@@ -950,12 +950,12 @@ function maxStepsPrefillFor(agent) {
 export { maxStepsPrefillFor }
 
 /**
- * Stock 0.1.2 maxSteps path: render opencode's MAX_STEPS_PROMPT as a
+ * Unpatched-harness maxSteps path: render opencode's MAX_STEPS_PROMPT as a
  * system-prompt section for the step that reaches the ceiling — the same
  * text and trigger as opencode, differing only in role (system prefix
- * instead of a trailing assistant continuation). The omo prompt re-renders
- * every step, so no dsh seam is needed. A leftover local assistantPrefill
- * seam, if present, is still preferred.
+ * instead of a trailing assistant continuation). This is runtime survival
+ * only; the documented surface is the assistant-role tail enabled by the
+ * assistantPrefill patch.
  */
 function maxStepsSectionFor(omoRoles, session) {
   if (omoRoles?.compat?.assistantPrefill === true) return undefined
@@ -968,10 +968,10 @@ export { maxStepsSectionFor }
 
 /**
  * Resolve the maxSteps injection the CURRENT harness can honor. The host
- * registry detects a leftover assistantPrefill marker at startup and
- * exposes `omoRoles.compat`. Stock 0.1.2 has no such seam, so the system
- * prompt carries the text (see maxStepsSectionFor) and this pre-step
- * decision passes through unchanged.
+ * registry detects the assistantPrefill marker at startup and exposes
+ * `omoRoles.compat`. dsh-v0.1.2-alpha.3 has no such seam without the plugin
+ * patch, so the system prompt carries the text (see maxStepsSectionFor) and
+ * this pre-step decision passes through unchanged.
  */
 function maxStepsDecisionFor(decision, agent, omoRoles) {
   if (omoRoles?.compat?.assistantPrefill !== true) return decision
@@ -1086,10 +1086,10 @@ export function apply(ctx) {
     }
   })
 
-  // maxSteps + MAX_STEPS_PROMPT. Stock 0.1.2 has no assistantPrefill seam;
-  // the same verbatim opencode text rides the system prompt via
-  // maxStepsSectionFor. A leftover local seam, if detected, still uses the
-  // assistant-role continuation.
+  // maxSteps + MAX_STEPS_PROMPT. dsh-v0.1.2-alpha.3 has no assistantPrefill
+  // seam, so the plugin ships the patch; when the host marker is detected the
+  // assistant-role continuation is used, and the same verbatim opencode text
+  // rides the system prompt via maxStepsSectionFor as a patchless fallback.
   ctx.on('agent/pre-step', async ({ agent, step }, next) => {
     const decision = await next()
     if (decision.kind === 'reject') return decision

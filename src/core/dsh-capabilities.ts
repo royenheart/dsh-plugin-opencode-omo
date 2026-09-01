@@ -26,7 +26,7 @@ export interface DshCompat {
   readonly detectionFailed: boolean
 }
 
-export const ASSISTANT_PREFILL_WARNING = '当前 dsh 没有 assistantPrefill 缝：maxSteps 触顶提示以系统提示词注入（文本与 opencode 相同，但位于 system prompt，不是 assistant 角色续写）。这是 0.1.2 的默认路径，不再需要打本地补丁。'
+export const ASSISTANT_PREFILL_WARNING = '当前 dsh 没有 assistantPrefill 缝：maxSteps 触顶提示降级为系统提示词注入（文本与 opencode 相同，但位于 system prompt，不是 assistant 角色续写）。完整保真需要应用 patches/0001-agent-pre-step-assistant-prefill.patch 并重新构建 dsh。'
 export const DETECTION_FAILED_WARNING = '无法确认 dsh 是否带有 leftover assistantPrefill（@deepseek-ai/dsh-agent-loop 解析失败）：maxSteps 触顶提示使用系统提示词注入。'
 
 let cached: DshCompat | undefined

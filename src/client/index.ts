@@ -9,13 +9,17 @@
  *   where each omo role's primary model and fallback models are configured.
  */
 import type { Context } from '@deepseek-ai/cordis'
-// Type-only: resolves the slots service merge + standard slot kit.
-import type {} from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: resolves the 0.1.2 session controller types (session
+// list/projection vocabulary replaced the former dsh-client-runtime).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+// Type-only: declares the web `ctx.slots` service (0.1.2 moved this from the
+// retired dsh-client-runtime package into dsh-client-ui-renderer).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the composer SlotMap declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the settings.section SlotMap declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionIdOf } from '@deepseek-ai/dsh-client-ui-slots'
 import { RoleSelect } from './RoleSelect.tsx'
 import type { RoleSelectInjected } from './RoleSelect.tsx'
 import { OmoSettingsSection } from './OmoSettingsSection.tsx'
@@ -62,7 +66,7 @@ type ModelCatalogGroup = {
 type SessionRemote = {
   modelCatalog(): Promise<RemoteResult<{ groups: readonly ModelCatalogGroup[] }>>
   selectModel(request: {
-    sessionId: SessionId
+    sessionId: SessionIdOf
     provider: string
     model: string
   }): Promise<RemoteResult<unknown>>
@@ -101,7 +105,7 @@ export function apply(ctx: Context): void {
   const loadModels = async (): Promise<readonly OmoCatalogModel[]> =>
     catalogOf(await session.modelCatalog())
 
-  const selectModel = async (selection: { provider: string; model: string }, sessionId: SessionId): Promise<boolean> => {
+  const selectModel = async (selection: { provider: string; model: string }, sessionId: SessionIdOf): Promise<boolean> => {
     const response = await session.selectModel({
       sessionId,
       provider: selection.provider,
@@ -120,7 +124,7 @@ export function apply(ctx: Context): void {
       id: 'opencode-omo-role',
       order: 10,
       label: () => 'opencode-omo',
-      inject: (sessionId: SessionId): RoleSelectInjected => ({
+      inject: (sessionId: SessionIdOf): RoleSelectInjected => ({
         sessionId,
         rolesEndpoint: ROLES_ENDPOINT,
         roleEndpoint: ROLE_ENDPOINT,

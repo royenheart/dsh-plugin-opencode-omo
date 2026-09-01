@@ -81,7 +81,9 @@ export function parseModelKey(key: string): OmoModelSelection | undefined {
 /** Session list row face used to decide whether the composer role chip shows. */
 export interface SessionPresetSummary {
   readonly agentPreset?: string
-  readonly projectionValues?: { readonly agentPreset?: string | null }
+  readonly projectionValues?: Readonly<Partial<Record<string, unknown>>> & {
+    readonly agentPreset?: string | null
+  }
 }
 
 /**

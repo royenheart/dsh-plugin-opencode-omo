@@ -33,7 +33,7 @@ export const name = 'opencode-omo'
 export const inject = ['settings', 'webServer']
 
 /** Settings namespace name (lowercase kebab-case). */
-export const OMO_ROLE_SETTINGS_NAMESPACE = 'opencode-omo-roles'
+export const OMO_ROLE_SETTINGS_NAMESPACE = 'opencode-omo-roles' as const
 
 /** Browser-facing routes (exact beats the modules `/plugins` prefix). */
 export const ROLES_ENDPOINT = '/plugins/@royenheart/dsh-plugin-opencode-omo/roles'
