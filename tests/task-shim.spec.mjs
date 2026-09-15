@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
 import {
   KNOWN_CATEGORIES,
   KNOWN_SUBAGENT_TYPES,
+  deliverFollowup,
   renderLoadedSkills,
   resolveTaskRoute,
   roleForDelegationCall,
@@ -182,4 +183,34 @@ test('roleForDelegationCall maps named tools and task() to omo roles', () => {
   assert.equal(roleForDelegationCall('task', { prompt: 'do a thing' }), 'sisyphus')
   assert.equal(roleForDelegationCall('task', { task_id: 'ses_123', subagent_type: 'oracle' }), undefined)
   assert.equal(roleForDelegationCall('subagent', {}), undefined)
+})
+
+test('deliverFollowup prefers the 0.1.6 sendMessage API and falls back to legacy followup', async () => {
+  const parent = { id: 'parent' }
+  const content = [{ type: 'text', text: 'continue' }]
+  const signal = new AbortController().signal
+  const calls = []
+
+  const modern = {
+    subagents: {
+      sendMessage: async (...args) => { calls.push(['sendMessage', ...args]) },
+      followup: async (...args) => { calls.push(['followup', ...args]) },
+    },
+  }
+  assert.equal(await deliverFollowup(modern, parent, 'child-1', content, signal), 'sendMessage')
+  assert.deepEqual(calls, [['sendMessage', parent, 'child-1', content, { signal }]])
+
+  calls.length = 0
+  const legacy = {
+    subagents: {
+      followup: async (...args) => { calls.push(['followup', ...args]) },
+    },
+  }
+  assert.equal(await deliverFollowup(legacy, parent, 'child-2', content, signal), 'followup')
+  assert.deepEqual(calls, [['followup', parent, 'child-2', content, { source: { kind: 'user' }, signal }]])
+
+  await assert.rejects(
+    () => deliverFollowup({ subagents: {} }, parent, 'child-3', content, signal),
+    /only fresh tasks are supported/,
+  )
 })

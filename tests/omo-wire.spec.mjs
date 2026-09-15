@@ -1,5 +1,5 @@
 /**
- * Browser wire helpers: catalog keys and the 0.1.2 agent-preset projection.
+ * Browser wire helpers: catalog keys and the 0.1.6 agent-preset projection.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -11,7 +11,7 @@ test('modelKey / parseModelKey round-trip', () => {
   assert.deepEqual(parseModelKey(key), { provider: 'deepseek-official', model: 'deepseek-v4-pro' })
 })
 
-test('sessionAgentPreset prefers the 0.1.2 projection field', () => {
+test('sessionAgentPreset prefers the 0.1.6 projection field', () => {
   assert.equal(sessionAgentPreset({
     agentPreset: 'stale',
     projectionValues: { agentPreset: 'opencode-omo' },
