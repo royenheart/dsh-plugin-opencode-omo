@@ -1,15 +1,15 @@
 {
-  "tag": "dsh-v0.1.2-alpha.3",
-  "version": "0.1.2-alpha.3",
-  "recordedAt": "2026-09-01T14:38:09.961Z",
+  "tag": "dsh-v0.1.6-alpha.1",
+  "version": "0.1.6-alpha.1",
+  "recordedAt": "2026-09-15T14:47:46.392Z",
   "verified": {
     "tag": "dsh-v0.1.1-rc.2",
     "version": "0.1.1-rc.2"
   },
   "pending": {
-    "tag": "dsh-v0.1.2-alpha.3",
-    "version": "0.1.2-alpha.3",
-    "pr": 6,
-    "prUrl": "https://github.com/royenheart/dsh-plugin-opencode-omo/pull/6"
+    "tag": "dsh-v0.1.6-alpha.1",
+    "version": "0.1.6-alpha.1",
+    "pr": 9,
+    "prUrl": "https://github.com/royenheart/dsh-plugin-opencode-omo/pull/9"
   }
 }
