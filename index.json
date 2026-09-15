@@ -1,0 +1,413 @@
+{
+  "schema": 1,
+  "generatedFor": {
+    "dsh": "dsh-v0.1.6-alpha.1",
+    "plugin": "@royenheart/dsh-plugin-opencode-omo"
+  },
+  "framework": "playwright",
+  "features": [
+    {
+      "id": "preset-mode-entry",
+      "surface": "web-client",
+      "entry": "New-session hero: click the agent-mode chip (\"Standard mode\" by default)",
+      "input": "Open the mode menu and select opencode-omo",
+      "expect": "The menu lists opencode-omo with its shipped Chinese description and the chip stages it on the blank session",
+      "checks": [
+        "aria",
+        "console",
+        "visual"
+      ],
+      "test": "e2e/specs/preset-mode-picker.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "preset-load-health",
+      "surface": "web-client",
+      "entry": "Settings -> Agent presets",
+      "input": "Open the preset roster and read the opencode-omo card",
+      "expect": "The card renders the preset description and the page never reports \"Failed to load\" (every preset row resolves, including the LSP rows)",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/preset-mode-picker.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "preset-isolation",
+      "surface": "web-client",
+      "entry": "Blank-session mode chip",
+      "input": "Switch the blank session from opencode-omo to Standard mode",
+      "expect": "The composer keeps the default dsh chrome: the omo role chip is gone; switching back restores it",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/preset-mode-picker.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "composer-role-picker",
+      "surface": "web-client",
+      "entry": "opencode-omo session composer, left tool row (after the access/plan chips)",
+      "input": "Read the role chip, open its menu, and select Prometheus - Plan Builder, then reload",
+      "expect": "Chip accessible name is 角色：<displayName>; the menu lists exactly the five primary roles; the switch persists per session across a reload",
+      "checks": [
+        "aria",
+        "console",
+        "visual"
+      ],
+      "test": "e2e/specs/role-picker.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "role-model-application",
+      "surface": "web-client",
+      "entry": "Role Settings primary model + composer role chip",
+      "input": "Pin Sisyphus - Ultraworker to DeepSeek-V4-Pro in settings, then switch the composer role away and back to Sisyphus",
+      "expect": "The composer model control reports DeepSeek-V4-Pro: the role's pinned primary is applied to the session through the model RPC",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/role-picker.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "settings-section",
+      "surface": "web-client",
+      "entry": "Settings dialog nav -> opencode-omo",
+      "input": "Open the section and read its chrome",
+      "expect": "Heading \"opencode-omo\", the alignment intro paragraph, and a tablist \"opencode-omo 设置页\" whose single 角色设置 tab is selected (the nested settings.tab slot)",
+      "checks": [
+        "aria",
+        "console",
+        "visual"
+      ],
+      "test": "e2e/specs/settings-section.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "role-catalog-rows",
+      "surface": "web-client",
+      "entry": "Role Settings page",
+      "input": "Read every role row",
+      "expect": "All 14 catalog roles render with display name, description, omo default chain, a centered 主模型 label, and one fallback \"+\" control each",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/settings-section.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "settings-primary-model",
+      "surface": "web-client",
+      "entry": "Role Settings -> role row -> 主模型 dropdown",
+      "input": "Open the dropdown, pick DeepSeek-V4-Pro, reload the page",
+      "expect": "Menu offers 跟随当前 plus the four catalog models; the pinned model is durable across a reload and can be reset to 跟随当前",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/settings-role-models.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "settings-fallback-add",
+      "surface": "web-client",
+      "entry": "Role Settings -> role row -> circle \"+\" button",
+      "input": "Open the fallback panel, filter with the search box, add two models, then pick an already-added model",
+      "expect": "The panel opens below the role box and stays open for repeat additions; each pick becomes a removable chip; a duplicate is refused with 该模型已在 fallback 列表中",
+      "checks": [
+        "aria",
+        "geometry:overflow",
+        "console"
+      ],
+      "test": "e2e/specs/settings-role-models.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "settings-fallback-cancel",
+      "surface": "web-client",
+      "entry": "Role Settings -> open fallback panel",
+      "input": "Close the panel with 取消, with Escape, and by clicking outside the role area",
+      "expect": "No fallback is added in any of the three cases",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/settings-role-models.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "settings-fallback-remove",
+      "surface": "web-client",
+      "entry": "Role Settings -> fallback chip -> remove control",
+      "input": "Click 移除 <model> on each chip and reload",
+      "expect": "Chips disappear on click and stay gone after a reload",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/settings-role-models.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "role-settings-persistence",
+      "surface": "web-client",
+      "entry": "Any accepted change on the Role Settings page",
+      "input": "Add a fallback, then read the host's settings document ($DSH_HOME/settings.yaml); remove it and read again",
+      "expect": "The opencode-omo-roles namespace carries the role-keyed fallback entry, and removal writes an empty list back",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/settings-role-models.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "role-settings-geometry",
+      "surface": "web-client",
+      "entry": "Role Settings layout",
+      "input": "Open a role's fallback panel and measure the live boxes",
+      "expect": "Chip list and add panel stack below the role box at the row's full width without overlap; no horizontal overflow in the settings surface; the \"+\" control is a 28px circle; the last catalog row's panel is not sheared off by its scroll container",
+      "checks": [
+        "geometry:overflow",
+        "visual",
+        "console"
+      ],
+      "test": "e2e/specs/settings-geometry.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "omo-commands-catalog",
+      "surface": "web-client",
+      "entry": "opencode-omo session composer, \"/\" trigger",
+      "input": "Type \"/\" and read the trigger menu",
+      "expect": "handoff, hyperplan, refactor, remove-ai-slops, start-work, stop-continuation, and team-mode are all offered",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/preset-commands.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "omo-skills-catalog",
+      "surface": "web-client",
+      "entry": "opencode-omo session composer, \"/\" trigger",
+      "input": "Type \"/\" and read the trigger menu",
+      "expect": "The omo skills published as user-dsh (ast-grep, coding-agent-sessions, programming, ulw-plan, ulw-research, visual-qa, ...) are discoverable",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/preset-commands.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "omo-command-isolation",
+      "surface": "web-client",
+      "entry": "Standard-mode session composer, \"/\" trigger",
+      "input": "Type \"/\" in a session that is not opencode-omo",
+      "expect": "The omo commands and skills are absent (the catalogs are preset rows, not global)",
+      "checks": [
+        "aria",
+        "console"
+      ],
+      "test": "e2e/specs/preset-commands.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "settings-rpc-fallback",
+      "surface": "web-client",
+      "entry": "Non-loopback (memory-mode) browser: role settings fall back to the authenticated /opencode-omo channel",
+      "input": "POST the memory-mode client-request envelope (catalog/get) to /opencode-omo/catalog/get with the browser session cookie",
+      "expect": "The channel answers a JSON server-response with ok:true and the role catalog. On dsh 0.1.6-alpha.1 the channel is never mounted: connection.rpc.handle() needs the caller to inject webServer, so registration throws and the request falls through to the SPA fallback (405). Pinned with test.fail() in the spec and asserted to fail by the run.",
+      "checks": [
+        "console"
+      ],
+      "test": "e2e/specs/settings-rpc-fallback.spec.ts",
+      "state": "failing"
+    },
+    {
+      "id": "cli-bundle-composition",
+      "surface": "cli",
+      "entry": "dsh --profile web --dump-config against the installed home",
+      "input": "Run the CLI and read the composed tree",
+      "expect": "Exit 0; the tree contains the opencode-omo bundle row naming @royenheart/dsh-plugin-opencode-omo and the agent-presets roster row",
+      "checks": [
+        "console"
+      ],
+      "test": "e2e/specs/bundle-composition.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "cli-install-layout",
+      "surface": "cli",
+      "entry": "install.py's documented install steps (symlink package, edit profile manifest, publish preset through $DSH_HOME/.agent-presets)",
+      "input": "Inspect the installed profile manifest and the published preset directory",
+      "expect": "The profile lists the link: dependency and the bundle entry; $DSH_HOME/.agent-presets/opencode-omo is a real directory whose entries are symlinks into the checkout",
+      "checks": [
+        "console"
+      ],
+      "test": "e2e/specs/bundle-composition.spec.ts",
+      "state": "passing",
+      "lastPassedFor": "dsh-v0.1.6-alpha.1"
+    },
+    {
+      "id": "opencode-toolchain",
+      "surface": "headless",
+      "entry": "Model turn inside an opencode-omo session",
+      "input": "Not exercised: needs a live provider (the lane is keyless)",
+      "expect": "The model-visible tool surface carries opencode's descriptions/parameters and the read/edit/write/web_search shims",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "omo-task-surface",
+      "surface": "headless",
+      "entry": "Model turn calling task(...) inside an opencode-omo session",
+      "input": "Not exercised: needs a live provider (the lane is keyless)",
+      "expect": "task(category/subagent_type/load_skills/run_in_background/task_id) maps onto named subagents/generic delegation and job notices use omo names",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "omo-multi-role-subagents",
+      "surface": "headless",
+      "entry": "Delegation from an opencode-omo turn",
+      "input": "Not exercised: needs a live provider (the lane is keyless)",
+      "expect": "oracle/librarian/explore/metis/momus/multimodal-looker plus generic subagent/subagent_fork/workflow/ralph are spawnable with the shipped personas",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "omo-context-injection",
+      "surface": "headless",
+      "entry": "Session start in a workspace carrying AGENTS.md/CLAUDE.md/.omo rules",
+      "input": "Not exercised: needs a live provider (the lane is keyless)",
+      "expect": "The walk-up instructions plus omo rules-injector text reach the assembled system prompt",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "omo-hooks",
+      "surface": "headless",
+      "entry": "write/edit tool execution inside an opencode-omo turn",
+      "input": "Not exercised: needs a live provider (the lane is keyless)",
+      "expect": "comment-checker rejects AI-slop comments and hashline tags reads / guards stale refs",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "per-mode-execution-backend",
+      "surface": "headless",
+      "entry": "Tool execution inside an opencode-omo session",
+      "input": "Not exercised: needs a live provider (the lane is keyless)",
+      "expect": "The session runs on the local filesystem backend plus a persistent PTY shell, isolated from other presets' sandboxed fs/shell",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "native-seam-loop-shim",
+      "surface": "headless",
+      "entry": "Every model step of an opencode-omo session",
+      "input": "Not exercised: needs a live provider (the lane is keyless)",
+      "expect": "Complete opencode+omo system prompt with live env block, gpt tool gating, ultrawork detection, maxSteps ceiling text (assistant prefill on a patched host, system section on stock), role model routing, and fallback advance on request errors",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "web-fetch-tool",
+      "surface": "headless",
+      "entry": "Model turn calling web_fetch inside an opencode-omo session",
+      "input": "Not exercised: needs a live provider plus an external network fetch",
+      "expect": "The preset's fetch:true row exposes the native web_fetch tool without duplicating the base provider",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "lsp-tool-surface",
+      "surface": "headless",
+      "entry": "Model turn calling lsp_* inside an opencode-omo session",
+      "input": "Not exercised: needs a live provider and an installed language server; preset load health (rows resolving) IS covered by preset-load-health",
+      "expect": "The named lsp_* tools answer over the native lsp seam and degrade gracefully when no server binary is present",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    },
+    {
+      "id": "per-role-reasoning-effort",
+      "surface": "headless",
+      "entry": "Role Settings reasoning-effort selector, then a model step",
+      "input": "Not exercised beyond the UI: proving the effort rides the request needs a live provider",
+      "expect": "The selected effort is attached to the role's model selection and reaches the outgoing request",
+      "checks": [
+        "aria"
+      ],
+      "test": "e2e/specs/agent-runtime-surfaces.spec.ts",
+      "state": "unknown"
+    }
+  ],
+  "files": [
+    "e2e/README.md",
+    "e2e/fixtures/dsh-app.ts",
+    "e2e/fixtures/ui.ts",
+    "e2e/playwright.config.ts",
+    "e2e/specs/agent-runtime-surfaces.spec.ts",
+    "e2e/specs/bundle-composition.spec.ts",
+    "e2e/specs/preset-commands.spec.ts",
+    "e2e/specs/preset-mode-picker.spec.ts",
+    "e2e/specs/role-picker.spec.ts",
+    "e2e/specs/settings-geometry.spec.ts",
+    "e2e/specs/settings-role-models.spec.ts",
+    "e2e/specs/settings-rpc-fallback.spec.ts",
+    "e2e/specs/settings-section.spec.ts",
+    "e2e/tsconfig.json"
+  ]
+}
