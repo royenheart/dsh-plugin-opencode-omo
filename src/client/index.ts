@@ -14,8 +14,13 @@
  * selection keep using the existing `remote.session` RPC.
  */
 import type { Context } from '@deepseek-ai/cordis'
-// Type-only: resolves the slots service merge + standard slot kit.
-import type {} from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: resolves the slots service merge (`ctx.slots`), provided by the
+// renderer in 0.1.6 (the former `@deepseek-ai/dsh-client-runtime` package was
+// removed). The standard slot kit types come from ui-slots, imported directly.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the session standard kit, including the branded
+// `sessionId` this session-scoped seat's inject factory receives.
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the composer SlotMap declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the settings.section SlotMap declaration.

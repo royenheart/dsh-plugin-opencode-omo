@@ -62,7 +62,7 @@ export interface SessionPresetSummary {
 }
 
 /**
- * Read the session's agent-preset id. dsh 0.1.2 keeps it on
+ * Read the session's agent-preset id. dsh 0.1.6 keeps it on
  * `projectionValues.agentPreset`; older list rows put it on the summary
  * itself. Empty / non-string values do not count.
  */

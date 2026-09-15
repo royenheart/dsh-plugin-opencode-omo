@@ -15,7 +15,12 @@ import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+// dsh 0.1.6 removed `@deepseek-ai/dsh-client-runtime`; the Session list state
+// this chip reads now lives on the session controller's browser-safe face.
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+// Type-only: pulls the `agentPreset` SessionProjectionMap merge this chip reads
+// off each list row.
+import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import {
   IconAgentPresetOutline16, IconChevronDownOutline14, Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'

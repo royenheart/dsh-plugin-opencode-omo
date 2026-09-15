@@ -14,8 +14,13 @@
 // - Named specialist / task() children pin an omo role and keep this complete
 //   section (no static persona overlay), so they see `<env>` + the specialist
 //   body instead of the dsh harness identity.
-// - maxSteps + MAX_STEPS_PROMPT render as a system-prompt section at the
-//   ceiling (see `maxStepsSectionFor`); no dsh-side patch is used.
+// - maxSteps + MAX_STEPS_PROMPT: on a harness carrying the companion
+//   `patches/0001-agent-pre-step-assistant-prefill.patch` seam, the ceiling
+//   text is a REQUEST-ONLY ASSISTANT continuation returned from
+//   `agent/pre-step` (opencode's role and position). The patched loop marks
+//   itself with `supportsAssistantPrefill`, so a stock harness takes the
+//   system-prompt-section fallback instead — exactly one channel either way,
+//   never both (see `maxStepsSectionFor` and `ceilingPromptFor`).
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -521,6 +526,59 @@ Response must include:
 
 Any attempt to use tools is a critical violation. Respond with text ONLY.`
 
+/**
+ * Ceiling channel selection. `patches/0001-agent-pre-step-assistant-prefill.patch`
+ * teaches the loop to honor `PreStepDecision.assistantPrefill` (a request-only
+ * assistant continuation recorded on the step's `request/header`); the patched
+ * `ReactLoopAgent` advertises `supportsAssistantPrefill`, which `agent/created`
+ * samples below. Stock harnesses take the system-prompt-section fallback.
+ * `DSH_OPENCODE_OMO_ASSISTANT_PREFILL=1|0` forces one channel (tests, benches).
+ */
+function assistantPrefillOverride() {
+  const value = process.env.DSH_OPENCODE_OMO_ASSISTANT_PREFILL
+  if (value === '1' || value === 'true') return true
+  if (value === '0' || value === 'false') return false
+  return undefined
+}
+
+const assistantPrefillEnv = assistantPrefillOverride()
+let assistantPrefillSeam = assistantPrefillEnv ?? false
+
+/** Whether the running harness honors `PreStepDecision.assistantPrefill`. */
+export function assistantPrefillSeamActive() {
+  return assistantPrefillSeam
+}
+
+/** Deployment/test hook for the ceiling channel; `undefined` restores auto-detection. */
+export function setAssistantPrefillSeam(value) {
+  assistantPrefillSeam = value ?? assistantPrefillEnv ?? false
+}
+
+/** The ceiling text for the step about to run, or undefined below the role's maxSteps. */
+function ceilingPromptFor(omoRoles, session) {
+  const maxSteps = maxStepsFor(omoRoles, session)
+  if (!Number.isFinite(maxSteps)) return undefined
+  return nextPosition(session).step >= maxSteps ? MAX_STEPS_PROMPT : undefined
+}
+
+/** Request-only assistant continuation for the ceiling step; the header is its sole durable record. */
+function assistantPrefillFor(agent, state, omoRoles) {
+  const text = ceilingPromptFor(omoRoles, agent.session)
+  if (text === undefined) return undefined
+  const position = nextPosition(agent.session)
+  const planned = state.resolvedRoutes.get(`${position.turn}:${position.step}`)
+  return {
+    id: `opencode-omo-max-steps-${agent.session.id}-${position.turn}-${position.step}`,
+    role: 'assistant',
+    content: [{ type: 'text', text }],
+    source: {
+      kind: 'model',
+      provider: planned?.provider ?? agent.options.provider ?? '',
+      model: planned?.model ?? agent.options.model ?? '',
+    },
+  }
+}
+
 /** Delegatable roles and when the orchestrator should use them. */
 const DELEGATION_TABLE = [
   ['task / call_omo_agent', '任何独立、自包含的实现/分析单元；category 或 subagent_type 选角色，task_id=ses_... 续跑'],
@@ -755,8 +813,8 @@ function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
     : roleSystem ?? personaText()
   const buildSwitch = buildSwitchFor(session)
   const plan = activePlanPrompt(session)
-  // maxSteps + MAX_STEPS_PROMPT always ride the system prompt at the ceiling
-  // on stock 0.1.2 (see maxStepsSectionFor); no dsh-side patch path remains.
+  // maxSteps + MAX_STEPS_PROMPT: assistant tail on a patched host, system
+  // section on a stock host (see maxStepsSectionFor); never both.
   const maxStepsSection = maxStepsSectionFor(omoRoles, session)
   const body = [
     ...(maxStepsSection === undefined ? [] : [maxStepsSection]),
@@ -935,19 +993,22 @@ function fallbackRetryable(failure) {
 export { fallbackRetryable }
 
 /**
- * Stock 0.1.2 maxSteps path: render opencode's MAX_STEPS_PROMPT as a
- * system-prompt section for the step that reaches the ceiling — the same
- * text and trigger as opencode, differing only in role (system prefix
- * instead of a trailing assistant continuation). The omo prompt re-renders
- * every step, so no dsh seam is needed.
+ * Fallback ceiling channel for harnesses without the assistant-prefill seam:
+ * render opencode's MAX_STEPS_PROMPT as a system-prompt section for the step
+ * that reaches the ceiling — the same text and trigger as opencode, differing
+ * only in role (system prefix instead of a trailing assistant continuation).
+ * When the seam is active this returns undefined: the pre-step listener sends
+ * the text as the request-only assistant tail, so the ceiling text is carried
+ * by exactly one channel.
  */
 function maxStepsSectionFor(omoRoles, session) {
-  const maxSteps = maxStepsFor(omoRoles, session)
-  if (!Number.isFinite(maxSteps)) return undefined
-  return nextPosition(session).step >= maxSteps ? MAX_STEPS_PROMPT : undefined
+  if (assistantPrefillSeam) return undefined
+  return ceilingPromptFor(omoRoles, session)
 }
 
 export { maxStepsSectionFor }
+
+export { assistantPrefillFor, MAX_STEPS_PROMPT }
 
 export function apply(ctx) {
   const states = new Map()
@@ -1052,6 +1113,19 @@ export function apply(ctx) {
     }
   })
 
+  // opencode's ceiling channel on a patched harness: MAX_STEPS_PROMPT is a
+  // request-only ASSISTANT continuation appended after the derived history and
+  // recorded on the step's request/header. Prepend so a downstream listener
+  // (dsh model-selection notices) still contributes its messages; the prefill
+  // is added on top of whatever enter decision the chain returns. Below the
+  // ceiling, and on stock harnesses, this returns the decision unchanged.
+  ctx.on('agent/pre-step', async ({ agent }, next) => {
+    const decision = await next()
+    if (decision.kind !== 'enter' || !assistantPrefillSeam) return decision
+    const prefill = assistantPrefillFor(agent, stateFor(agent), omoRoles)
+    return prefill === undefined ? decision : { ...decision, assistantPrefill: prefill }
+  }, { prepend: true })
+
   // Role primary model + ultrawork override + omo sampling defaults. Prepend
   // for the same reason as the assembly listener: dsh's model-selection
   // listener would otherwise run last and silently override the role route
@@ -1090,13 +1164,19 @@ export function apply(ctx) {
     }
   }, { prepend: true })
 
+  // Role fallback chain BEFORE the harness retry policy. dsh mounts
+  // `@deepseek-ai/dsh-llm-retry` in the base bundle, and in its normal mode a
+  // retryable code is settled WITHOUT calling next() until the route's own
+  // retries are exhausted; a listener registered later would never run. Prepend
+  // so the role's ordered fallback chain decides first (its `{kind:'retry'}`
+  // then re-routes the next attempt through the prepended `agent/request`).
   ctx.on('agent/request-error', async ({ agent, turn, step, failure, signal }, next) => {
     if (signal?.aborted || !fallbackRetryable(failure)) return next()
     if (advanceFallback(omoRoles, stateFor(agent), agent.session, turn, step)) {
       return { kind: 'retry' }
     }
     return next()
-  })
+  }, { prepend: true })
 
   ctx.on('agent/disposed', ({ agent }) => {
     states.delete(agent.session.id)
@@ -1112,6 +1192,11 @@ export function apply(ctx) {
     return pendingChildRole.run(role, () => next())
   })
   ctx.on('agent/created', ({ agent }) => {
+    // The patched loop advertises the assistant-prefill seam on the agent; a
+    // stock loop leaves the marker undefined and keeps the system-section path.
+    if (assistantPrefillEnv === undefined && typeof agent?.supportsAssistantPrefill === 'boolean') {
+      assistantPrefillSeam = agent.supportsAssistantPrefill
+    }
     if (agent?.session?.header?.origin !== 'subagent') return
     const role = pendingChildRole.getStore()
     if (role === undefined || typeof omoRoles?.pinRole !== 'function') return

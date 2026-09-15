@@ -1,0 +1,327 @@
+diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
+index 4ea7593..0b98c09 100644
+--- a/packages/core/agent-loop/src/agent.ts
++++ b/packages/core/agent-loop/src/agent.ts
+@@ -16,7 +16,7 @@ import type {
+   RequestErrorAction,
+ } from '@deepseek-ai/dsh-agent'
+ import { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
++import type { AssistantMessage, GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+ import {
+   LlmError,
+   createAssistantMessage,
+@@ -56,6 +56,7 @@ type PreparedStep =
+     kind: 'enter'
+     messages: UserMessage[]
+     startsRequestSeries?: true
++    assistantPrefill?: AssistantMessage
+     assembly: PromptAssembly
+   }
+ 
+@@ -71,6 +72,8 @@ function requestProposal(header: EpochHeader): LlmCallConfig {
+ /** Drives one session through turn and step boundaries. */
+ export class ReactLoopAgent implements Agent {
+   readonly inbox: ReactLoopInbox
++  /** This loop honors a pre-step `assistantPrefill`; see the Agent capability marker. */
++  readonly supportsAssistantPrefill = true as const
+   private phase: Phase
+   private activityDone: Promise<void> = Promise.resolve()
+ 
+@@ -377,7 +380,9 @@ export class ReactLoopAgent implements Agent {
+         }
+       }
+       firstAttempt = false
+-      const request = this.buildRequest(config, preparedCall, assembly.tools, startsRequestSeries, signal)
++      const request = this.buildRequest(
++        config, preparedCall, assembly.tools, startsRequestSeries, signal, decision.assistantPrefill,
++      )
+       const live = new AssistantStreamAttempt(
+         this.session.id,
+         ++this.assistantAttemptCounter,
+@@ -557,6 +562,7 @@ export class ReactLoopAgent implements Agent {
+     tools: GenerateOptions['tools'] & object,
+     startsRequestSeries: boolean,
+     signal: AbortSignal,
++    assistantPrefill?: AssistantMessage,
+   ): GenerateOptions {
+     const { session } = this
+     const surfaceGeneration = session.surface.contentGeneration
+@@ -564,6 +570,7 @@ export class ReactLoopAgent implements Agent {
+       config,
+       ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
+       ...tools.length > 0 ? { tools } : {},
++      ...assistantPrefill === undefined ? {} : { assistantPrefill },
+     })
+     const baseline = this.session.requestHeader()
+     const startsSeries = startsRequestSeries
+@@ -602,15 +609,18 @@ export class ReactLoopAgent implements Agent {
+     // canonicalHeader is shallow; append logs a detached snapshot, not these local values.
+     deepFreeze(header)
+     const boundaryMessages = session.deriveMessages()
+-    for (const message of boundaryMessages) {
++    const requestMessages = assistantPrefill === undefined
++      ? boundaryMessages
++      : [...boundaryMessages, assistantPrefill]
++    for (const message of requestMessages) {
+       if (this.frozenMessages.has(message)) continue
+       deepFreeze(message)
+       this.frozenMessages.add(message)
+     }
+-    Object.freeze(boundaryMessages)
++    Object.freeze(requestMessages)
+     const request = markAgentLoopRequest(Object.freeze({
+       ...header.config,
+-      messages: boundaryMessages,
++      messages: requestMessages,
+       ...header.tools !== undefined ? { tools: header.tools } : {},
+       sessionId: this.session.id,
+       signal,
+diff --git a/packages/core/agent-loop/src/invariant.ts b/packages/core/agent-loop/src/invariant.ts
+index 3b1c62d..957add0 100644
+--- a/packages/core/agent-loop/src/invariant.ts
++++ b/packages/core/agent-loop/src/invariant.ts
+@@ -38,7 +38,10 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
+       return fail('a loop-built request with no request/header event in its session log')
+     }
+     const expected = session.deriveMessages()
+-    if (JSON.stringify(options.messages) !== JSON.stringify(expected)) {
++    const derived = header.assistantPrefill === undefined
++      ? expected
++      : [...expected, header.assistantPrefill]
++    if (JSON.stringify(options.messages) !== JSON.stringify(derived)) {
+       fail(`llm request for session "${String(session.id)}" diverges from the dispatch-time durable derivation (log-reconstruction desync)`)
+     }
+ 
+diff --git a/packages/core/agent-loop/tests/interception.spec.ts b/packages/core/agent-loop/tests/interception.spec.ts
+index 27302c5..2ee0292 100644
+--- a/packages/core/agent-loop/tests/interception.spec.ts
++++ b/packages/core/agent-loop/tests/interception.spec.ts
+@@ -1,6 +1,6 @@
+ import { describe, expect, it, vi } from 'vitest'
+ import { Context } from '@deepseek-ai/cordis'
+-import LlmRuntime, { createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
++import LlmRuntime, { createAssistantMessage, createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
+ import SessionStore, {
+   SessionId,
+   type SessionEvent,
+@@ -206,6 +206,53 @@ describe('agent/pre-step', () => {
+     expect(sent).toContain('extra ctx')
+   })
+ 
++  it('assistantPrefill rides the request tail and the logged header without becoming a session message', async () => {
++    const adapter = new MockAdapter([textResponse('ok')])
++    const ctx = await harness(adapter)
++    const agent = await ctx.agentLoop.create(SessionId('prefill'), { provider: 'mock', model: 'mock' })
++    const prefill = createAssistantMessage({
++      content: [{ type: 'text', text: 'CRITICAL - MAXIMUM STEPS REACHED' }],
++      source: { provider: 'mock', model: 'mock' },
++    })
++    ctx.on('agent/pre-step', async ({ messages }): Promise<PreStepDecision> =>
++      ({ kind: 'enter', messages, assistantPrefill: prefill }))
++
++    send(agent, 'go')
++    await waitForIdle(ctx, agent)
++
++    // The request ends with the assistant continuation; history itself stays user-only.
++    const request = adapter.requests[0]!
++    expect(request.messages.at(-1)).toMatchObject({
++      role: 'assistant',
++      content: [{ type: 'text', text: 'CRITICAL - MAXIMUM STEPS REACHED' }],
++    })
++    expect(Object.isFrozen(request.messages)).toBe(true)
++    expect(Object.isFrozen(request.messages.at(-1))).toBe(true)
++    expect(agent.session.deriveMessages()).not.toContainEqual(expect.objectContaining({ role: 'assistant' }))
++
++    // The header is the prefill's only durable record.
++    const headerEvent = events(agent).find(event => event.type === 'request/header')
++    expect(headerEvent?.type === 'request/header' && headerEvent.data.header.assistantPrefill).toMatchObject({
++      role: 'assistant',
++      content: [{ type: 'text', text: 'CRITICAL - MAXIMUM STEPS REACHED' }],
++    })
++    expect(events(agent).filter(event => event.type === 'user/message')).toHaveLength(1)
++  })
++
++  it('omitting assistantPrefill leaves the request tail unchanged', async () => {
++    const adapter = new MockAdapter([textResponse('ok')])
++    const ctx = await harness(adapter)
++    const agent = await ctx.agentLoop.create(SessionId('no-prefill'), { provider: 'mock', model: 'mock' })
++
++    send(agent, 'go')
++    await waitForIdle(ctx, agent)
++
++    const request = adapter.requests[0]!
++    expect(request.messages.at(-1)).toMatchObject({ role: 'user' })
++    const headerEvent = events(agent).find(event => event.type === 'request/header')
++    expect(headerEvent?.type === 'request/header' && headerEvent.data.header.assistantPrefill).toBeUndefined()
++  })
++
+   it('does not open another step when a completed turn rewrites pending input to empty', async () => {
+     const adapter = new MockAdapter([textResponse('done')])
+     const ctx = await harness(adapter)
+diff --git a/packages/core/agent-loop/tests/invariant.spec.ts b/packages/core/agent-loop/tests/invariant.spec.ts
+index 6a71629..125e552 100644
+--- a/packages/core/agent-loop/tests/invariant.spec.ts
++++ b/packages/core/agent-loop/tests/invariant.spec.ts
+@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
+ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
+ import * as AgentLoopInvariant from '@deepseek-ai/dsh-agent-loop/invariant'
+-import { createUserMessage, markAgentLoopRequest, type GenerateOptions  } from '@deepseek-ai/dsh-llm'
++import { createAssistantMessage, createUserMessage, markAgentLoopRequest, type GenerateOptions  } from '@deepseek-ai/dsh-llm'
+ 
+ async function setup(): Promise<Context> {
+   const ctx = new Context()
+@@ -66,6 +66,29 @@ describe('request-reconstruction invariant', () => {
+       .toThrow(/diverges from the dispatch-time durable derivation/)
+   })
+ 
++  it('accepts a request whose tail is the header-recorded assistant prefill', async () => {
++    const { ctx, session, boundary } = await requestSetup()
++    const prefill = createAssistantMessage({
++      content: [{ type: 'text', text: 'CRITICAL - MAXIMUM STEPS REACHED' }],
++      source: { provider: 'mock', model: 'm' },
++    })
++    session.append('request/header', {
++      header: { config: { provider: 'mock', model: 'm' }, assistantPrefill: prefill },
++      reason: 'change',
++    })
++    expect(() => {
++      dispatch(ctx, loopRequest({
++        model: 'm',
++        messages: Object.freeze([...boundary, prefill]),
++        sessionId: session.id,
++      }))
++    }).not.toThrow()
++    // The prefill is not surface-derivable: a request omitting it diverges.
++    expect(() => {
++      dispatch(ctx, loopRequest({ model: 'm', messages: Object.freeze([...boundary]), sessionId: session.id }))
++    }).toThrow(/diverges from the dispatch-time durable derivation/)
++  })
++
+   it('rejects message and header divergence', async () => {
+     const { ctx, session, boundary } = await requestSetup()
+     const divergent = [...boundary, { role: 'user', content: [{ type: 'text', text: 'phantom' }] }]
+diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
+index 2118507..f80b2ab 100644
+--- a/packages/core/agent/src/runtime-types.ts
++++ b/packages/core/agent/src/runtime-types.ts
+@@ -10,7 +10,7 @@ import type { Scoped } from '@deepseek-ai/dsh-scope'
+ import type {
+   LlmAttemptId, LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy, StreamChunk,
+ } from '@deepseek-ai/dsh-llm'
+-import type { AgentCancelCause, Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
++import type { AgentCancelCause, AssistantMessage, Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
+ export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
+ import type { Agent, InboxTarget } from './types.ts'
+ export type { Agent } from './types.ts'
+@@ -116,6 +116,13 @@ export type PreStepDecision =
+     messages: UserMessage[]
+     /** Start a distinct model-message series before this step's admitted messages. */
+     startsRequestSeries?: true
++    /**
++     * Request-only assistant continuation appended after this step's derived
++     * history. Logged on the step's `request/header`, never appended as a
++     * session message, and therefore absent from the surface, transcript,
++     * compaction, and statistics. Omission preserves the historical request.
++     */
++    assistantPrefill?: AssistantMessage
+   }
+ 
+ /** Action returned by a listener that owns model-request recovery. */
+@@ -164,6 +171,13 @@ declare module './types.ts' {
+   interface Agent {
+     /** The provider route and model this agent's requests use. */
+     readonly options: AgentOptions
++    /**
++     * Present and true when this agent's loop honors
++     * {@link PreStepDecision.assistantPrefill}. A plugin that must work on
++     * harnesses without the seam feature-detects this marker and degrades to
++     * a logged channel instead of relying on a silently ignored field.
++     */
++    readonly supportsAssistantPrefill?: true
+     /** The live session this agent drives; its log is the durable source of truth. */
+     readonly session: Session
+     /** Agent-owned access to durable pending work. */
+diff --git a/packages/core/session/src/request-header.ts b/packages/core/session/src/request-header.ts
+index 326165a..8f2095d 100644
+--- a/packages/core/session/src/request-header.ts
++++ b/packages/core/session/src/request-header.ts
+@@ -26,6 +26,7 @@ export function canonicalHeader(header: EpochHeader): EpochHeader {
+       ? { adapterDefaults }
+       : {},
+     ...header.tools !== undefined && header.tools.length > 0 ? { tools: header.tools } : {},
++    ...header.assistantPrefill === undefined ? {} : { assistantPrefill: header.assistantPrefill },
+   }
+ }
+ 
+@@ -38,14 +39,17 @@ function sameSchema(a: ToolSchema, b: ToolSchema): boolean {
+  * Field-wise equality over canonical headers. Tool schemas compare in order.
+  * @param a - one canonical header.
+  * @param b - the other.
+- * @returns whether config, adapter defaults, and tools all match.
++ * @returns whether config, adapter defaults, tools, and any request-only assistant prefill all match.
+  */
+ export function headerEquals(a: EpochHeader, b: EpochHeader): boolean {
+   if (
+     !callConfigEquals(a.config, b.config)
+     || a.adapterDefaults?.reasoningEffort !== b.adapterDefaults?.reasoningEffort
+     || a.adapterDefaults?.maxTokens !== b.adapterDefaults?.maxTokens
++    || (a.assistantPrefill === undefined) !== (b.assistantPrefill === undefined)
+   ) return false
++  if (a.assistantPrefill !== undefined
++    && JSON.stringify(a.assistantPrefill) !== JSON.stringify(b.assistantPrefill)) return false
+   const at = a.tools ?? []
+   const bt = b.tools ?? []
+   return at.length === bt.length && at.every((tool, i) => sameSchema(tool, bt[i] as ToolSchema))
+diff --git a/packages/core/session/src/types.ts b/packages/core/session/src/types.ts
+index 0b946bd..83ff55d 100644
+--- a/packages/core/session/src/types.ts
++++ b/packages/core/session/src/types.ts
+@@ -236,6 +236,12 @@ export interface EpochHeader {
+   adapterDefaults?: LlmCallConfigAdapterDefaults
+   /** Assembled tool schemas; absent for a tool-less request. */
+   tools?: ToolSchema[]
++  /**
++   * Request-only assistant continuation appended after the derived history.
++   * The header is its sole durable record; it is never a session message, so
++   * the surface, transcript, compaction, and statistics exclude it.
++   */
++  assistantPrefill?: AssistantMessage
+ }
+ 
+ /** Registration-bound metadata for one resolved model route. */
+diff --git a/packages/llm/token-meter/src/index.ts b/packages/llm/token-meter/src/index.ts
+index f721d26..e20feec 100644
+--- a/packages/llm/token-meter/src/index.ts
++++ b/packages/llm/token-meter/src/index.ts
+@@ -84,6 +84,11 @@ function optionalHeaderEquals(
+   return headerEquals(left, right)
+ }
+ 
++/** Price the header's request-only assistant prefill, which is not a surface node. */
++function estimatePrefillTokens(header: EpochHeader | undefined): number {
++  return header?.assistantPrefill === undefined ? 0 : estimateMessage(header.assistantPrefill)
++}
++
+ /** Reject stale or misspelled keys before defaults can hide them. */
+ function validateConfigKeys(config: TokenMeterConfig): void {
+   for (const key of Object.keys(config)) {
+@@ -161,7 +166,7 @@ export class TokenMeter extends Service {
+       // compares like with like.
+       const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing, fileText).surfaceTokens
+         + anchor.assistantTokens
+-      const estimatedAnchorTokens = estimateToolsTokens(header) + anchorSurfaceTokens
++      const estimatedAnchorTokens = estimateToolsTokens(header) + estimatePrefillTokens(header) + anchorSurfaceTokens
+       const usage = anchor.usage
+       // Signed heuristic deltas remain conservative only from an anchor
+       // that is at least as large as the matching full heuristic price.
+@@ -175,7 +180,7 @@ export class TokenMeter extends Service {
+     } else {
+       baseline = {
+         kind: 'estimated',
+-        tokens: estimateToolsTokens(header) + surface.surfaceTokens,
++        tokens: estimateToolsTokens(header) + estimatePrefillTokens(header) + surface.surfaceTokens,
+       }
+       surfaceDeltaTokens = 0
+     }

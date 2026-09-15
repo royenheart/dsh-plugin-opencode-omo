@@ -115,11 +115,36 @@ async function callRpc(connection, endpoint, payload) {
   return connection.handler(endpoint, payload)
 }
 
+/**
+ * Boot the host half in the boot-probe composition: `settings` + `llm` (the
+ * registry's own dependency), with neither `webServer` nor `connection`
+ * mounted. The plugin owns no HTTP route, so this is a valid host composition
+ * and must activate.
+ */
+async function bootHeadless() {
+  const ctx = new Context()
+  await ctx.plugin(settingsPlugin)
+  await ctx.plugin(llmPlugin)
+  await ctx.plugin({ name, inject, apply })
+  assert.equal(ctx.get('webServer'), undefined)
+  assert.equal(ctx.get('connection'), undefined)
+  return ctx
+}
+
 test('registers the role registry and settings namespace', async () => {
   const { ctx } = await boot()
   const roles = ctx.omoRoles
   assert.equal(roles.roleFor('session-a'), OMO_DEFAULT_ROLE)
   assert.equal(roles.configs()['sisyphus'].fallbackModels.length, 0)
+})
+
+test('activates without webServer or connection (headless composition)', async () => {
+  assert.ok(!inject.includes('webServer'))
+  const ctx = await bootHeadless()
+  assert.ok(ctx.omoRoles)
+  assert.equal(ctx.omoRoles.roleFor('session-a'), OMO_DEFAULT_ROLE)
+  await ctx.omoRoles.setRole('session-a', 'atlas')
+  assert.equal(ctx.omoRoles.roleFor('session-a'), 'atlas')
 })
 
 test('persists per-role model config and returns it through the registry', async () => {

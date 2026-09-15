@@ -4,7 +4,8 @@
 // dsh's native subagent services.
 //
 // Routing:
-//   task_id        -> continuable follow-up (`ctx.subagents.followup`)
+//   task_id        -> continuable follow-up (`ctx.subagents.sendMessage` on
+//                     0.1.6; legacy `ctx.subagents.followup` fallback)
 //   subagent_type  -> start with the SAME toolFilter as the matching named
 //                     row; the child prompt is the driver's complete
 //                     `<env>` + specialist body (no static persona overlay)
@@ -452,20 +453,35 @@ async function startBackground(ctx, request, label, parent, exec) {
   return { kind: 'background', jobId: toBackgroundTaskId(id) }
 }
 
+/**
+ * Deliver one follow-up to an existing continuable child.
+ *
+ * dsh 0.1.6 exposes `ctx.subagents.sendMessage(sender, targetId, content,
+ * { signal })` (the `send_message` control path: steer the nearest step, or
+ * start a turn when the child is idle). Older 0.1.x hosts exposed
+ * `ctx.subagents.followup(parent, taskId, content, { source, signal })`; keep
+ * it as the legacy fallback so the shim survives both harness generations.
+ *
+ * @returns which service method served the delivery.
+ */
+export async function deliverFollowup(ctx, parent, taskId, content, signal) {
+  if (typeof ctx.subagents?.sendMessage === 'function') {
+    await ctx.subagents.sendMessage(parent, taskId, content, { signal })
+    return 'sendMessage'
+  }
+  if (typeof ctx.subagents?.followup === 'function') {
+    await ctx.subagents.followup(parent, taskId, content, { source: { kind: 'user' }, signal })
+    return 'followup'
+  }
+  throw new Error(
+    'task_id requires continuable subagent follow-up, but neither ctx.subagents.sendMessage (0.1.6) nor ctx.subagents.followup is available in this composition; only fresh tasks are supported',
+  )
+}
+
 /** Deliver a follow-up to an existing continuable child. */
 async function followup(ctx, args, taskId, parent, exec) {
-  if (typeof ctx.subagents?.followup !== 'function') {
-    throw new Error(
-      'task_id requires continuable subagent follow-up, but ctx.subagents.followup is unavailable in this composition; only fresh tasks are supported',
-    )
-  }
   const promptText = renderLoadedSkills(args.load_skills) + String(args.prompt ?? '')
-  await ctx.subagents.followup(
-    parent,
-    taskId,
-    [{ type: 'text', text: promptText }],
-    { source: { kind: 'user' }, signal: exec.signal },
-  )
+  await deliverFollowup(ctx, parent, taskId, [{ type: 'text', text: promptText }], exec.signal)
   return { kind: 'continuable', subagentId: toSessionTaskId(taskId) }
 }
 

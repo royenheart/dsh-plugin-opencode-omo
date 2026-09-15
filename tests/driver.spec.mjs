@@ -9,7 +9,18 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fallbackRetryable, gateToolCall, opencodeUsesPatch, persistPlanFile, systemPromptFor } from '../presets/opencode-omo/driver.mjs'
+import {
+  MAX_STEPS_PROMPT,
+  apply,
+  assistantPrefillFor,
+  assistantPrefillSeamActive,
+  fallbackRetryable,
+  gateToolCall,
+  opencodeUsesPatch,
+  persistPlanFile,
+  setAssistantPrefillSeam,
+  systemPromptFor,
+} from '../presets/opencode-omo/driver.mjs'
 import { renderRulesFor } from '../presets/opencode-omo/rules.mjs'
 
 function roleFace(role = 'sisyphus') {
@@ -210,9 +221,10 @@ test('unknown model families use the omo dynamic Sisyphus fallback prompt', () =
   }
 })
 
-test('maxSteps section appears in the system prompt at the ceiling on stock 0.1.2', () => {
+test('maxSteps section appears in the system prompt at the ceiling on a stock host', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-maxsteps-'))
   try {
+    setAssistantPrefillSeam(false)
     // step counting: nextPosition = last step/start + 1; three starts propose step 4.
     const events = [
       { type: 'turn/start', data: { turn: 1 } },
@@ -229,9 +241,91 @@ test('maxSteps section appears in the system prompt at the ceiling on stock 0.1.
     const below = systemPromptFor(ctx, roles, mockState(), mockAgent(cwd, events.slice(0, 3)))
     assert.doesNotMatch(below, /CRITICAL - MAXIMUM STEPS REACHED/)
   } finally {
+    setAssistantPrefillSeam(undefined)
     rmSync(cwd, { recursive: true, force: true })
   }
 })
+
+test('the assistant-prefill seam swaps the ceiling text out of the system prompt', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-maxsteps-prefill-'))
+  try {
+    const events = [
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'step/start', data: { turn: 1, step: 1 } },
+      { type: 'step/start', data: { turn: 1, step: 2 } },
+      { type: 'step/start', data: { turn: 1, step: 3 } },
+    ]
+    const roles = { ...roleFace(), configFor: () => ({ maxSteps: 4, fallbackModels: [] }) }
+    const ctx = { tools: { schemas: () => [] } }
+    const agent = mockAgent(cwd, events)
+
+    setAssistantPrefillSeam(true)
+    assert.equal(assistantPrefillSeamActive(), true)
+    // Exactly one channel: the section is gone while the seam is active.
+    assert.doesNotMatch(systemPromptFor(ctx, roles, mockState(), agent), /CRITICAL - MAXIMUM STEPS REACHED/)
+
+    const prefill = assistantPrefillFor(agent, mockState(), roles)
+    assert.equal(prefill.role, 'assistant')
+    assert.deepEqual(prefill.content, [{ type: 'text', text: MAX_STEPS_PROMPT }])
+    assert.deepEqual(prefill.source, { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4' })
+
+    // Below the ceiling no channel fires.
+    const below = mockAgent(cwd, events.slice(0, 3))
+    assert.equal(assistantPrefillFor(below, mockState(), roles), undefined)
+    assert.doesNotMatch(systemPromptFor(ctx, roles, mockState(), below), /CRITICAL - MAXIMUM STEPS REACHED/)
+  } finally {
+    setAssistantPrefillSeam(undefined)
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('the assistant-prefill seam defaults off on an unpatched host and follows the agent marker', () => {
+  // Auto-detection: no env override, no patched agent -> system section.
+  assert.equal(assistantPrefillSeamActive(), false)
+  // The patched ReactLoopAgent advertises the marker; apply()'s agent/created
+  // listener samples it. Covered here through the same setter that listener uses.
+  setAssistantPrefillSeam(true)
+  assert.equal(assistantPrefillSeamActive(), true)
+  setAssistantPrefillSeam(undefined)
+  assert.equal(assistantPrefillSeamActive(), false)
+})
+
+test('agent/pre-step returns the assistant prefill at the ceiling when the seam is active', async () => {
+  const events = [
+    { type: 'turn/start', data: { turn: 1 } },
+    { type: 'step/start', data: { turn: 1, step: 1 } },
+    { type: 'step/start', data: { turn: 1, step: 2 } },
+    { type: 'step/start', data: { turn: 1, step: 3 } },
+  ]
+  const roles = { ...roleFace(), configFor: () => ({ maxSteps: 4, fallbackModels: [] }) }
+  setAssistantPrefillSeam(true)
+  try {
+    const handlers = new Map()
+    const ctx = {
+      effect: (fn) => { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {} },
+      get: name => (name === 'omoRoles' ? roles : undefined),
+      on: (name, handler) => { handlers.set(name, handler); return () => {} },
+      systemPrompt: { section: () => () => {}, variable: () => () => {}, suppressRuntimeContext: () => {} },
+      tools: { schemas: () => [] },
+    }
+    apply(ctx)
+    const handler = handlers.get('agent/pre-step')
+    assert.equal(typeof handler, 'function')
+
+    const next = async () => ({ kind: 'enter', messages: [] })
+    const decision = await handler({ agent: mockAgent(process.cwd(), events) }, next)
+    assert.equal(decision.kind, 'enter')
+    assert.equal(decision.assistantPrefill.role, 'assistant')
+    assert.deepEqual(decision.assistantPrefill.content, [{ type: 'text', text: MAX_STEPS_PROMPT }])
+
+    // Below the ceiling the decision passes through untouched.
+    const below = await handler({ agent: mockAgent(process.cwd(), events.slice(0, 3)) }, next)
+    assert.equal(below.assistantPrefill, undefined)
+  } finally {
+    setAssistantPrefillSeam(undefined)
+  }
+})
+
 
 test('specialist roles render env plus the specialist body, not Sisyphus identity', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-oracle-child-'))

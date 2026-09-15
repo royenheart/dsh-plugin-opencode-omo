@@ -632,8 +632,10 @@
     - id: opencode-omo-task-shim
       name: ./task-shim.mjs
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    # 0.1.6 renamed the workflow execution backend: `dsh-workflow-worker-thread`
+    # became `@deepseek-ai/dsh-workflow-ptc` (same `provider: spawn` contract).
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 

@@ -12,7 +12,6 @@
  *   model/fallback configuration.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
 import { OmoRoleRegistry } from './omo-role-registry.ts'
 import type { OmoRoleRegistryFace } from './omo-role-registry.ts'
@@ -38,8 +37,17 @@ export { OMO_ROLE_SETTINGS_NAMESPACE } from './core/omo-settings.ts'
 /** Cordis plugin name. */
 export const name = 'opencode-omo'
 
-/** Required services: settings persistence + the web route registry. Headless benches satisfy the web registry with a standalone webserver row (see tests/benches). */
-export const inject = ['settings', 'webServer']
+/**
+ * Required services: settings persistence only.
+ *
+ * The host half deliberately does NOT inject `webServer`: it owns no HTTP
+ * route (the browser surface rides `connection.rpc`, see
+ * `docs/remote-settings-hybrid-design.md`), so a composition without
+ * `dsh-host-webserver` — headless, minimal SDK, ACP — must still activate the
+ * registry the preset reads. Injecting `webServer` left this row pending
+ * forever there, which also starved the preset of `ctx.omoRoles`.
+ */
+export const inject = ['settings']
 
 const optionalString = z.union([z.string(), z.const(undefined)]).default(undefined)
 const optionalNumber = z.union([z.number(), z.const(undefined)]).default(undefined)
@@ -152,8 +160,9 @@ async function handleOmoRpc(
 }
 
 /**
- * Mount the role registry and the authenticated browser RPC channel.
- * @param ctx - host plugin context carrying settings and webServer.
+ * Mount the role registry and, when the composition carries one, the
+ * authenticated browser RPC channel.
+ * @param ctx - host plugin context carrying the `settings` service.
  */
 export function apply(ctx: Context): void {
   const scope = ctx.settings.register(
@@ -188,7 +197,7 @@ export function apply(ctx: Context): void {
   // resolve the same live instance the preset driver reads. `connection` is
   // included so the channel registers only after the connection host service
   // is active (headless compositions without connection skip this callback).
-  ctx.inject(['settings', 'webServer', 'omoRoles', 'connection'], (hostCtx) => {
+  ctx.inject(['settings', 'omoRoles', 'connection'], (hostCtx) => {
     const roles = hostCtx.omoRoles
     const connection = hostCtx.get('connection') as ConnectionRpcFace | undefined
     hostCtx.effect(() => {

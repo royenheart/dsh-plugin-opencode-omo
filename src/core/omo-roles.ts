@@ -36,9 +36,12 @@ export interface OmoUltraworkOverride {
   readonly reasoningEffort?: string | undefined
 }
 
-/** Stored settings shape: `model: null` records "follow the session model". */
+/**
+ * Stored settings shape: `model: null` records "follow the session model",
+ * while an absent model is the schema's own default and means the same thing.
+ */
 export interface StoredOmoRoleConfig {
-  readonly model: OmoModelSelection | null
+  readonly model?: OmoModelSelection | null | undefined
   readonly fallbackModels: OmoModelSelection[]
   readonly maxSteps?: number | undefined
   readonly ultrawork?: OmoUltraworkOverride | undefined
