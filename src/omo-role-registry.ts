@@ -1,13 +1,14 @@
 /**
  * OmoRoleRegistry — the opencode-omo host service shared by the browser-facing
- * HTTP surface and the preset's native-seam loop shim.
+ * authenticated RPC surface and the preset's native-seam loop shim.
  *
  * It owns three planes:
- * - durable settings (`opencode-omo-roles` namespace): per-role model/fallback
- *   configuration plus the last selected role per session, persisted through
- *   the dsh settings provider;
+ * - durable configuration (the `opencode-omo-roles` profile entry's volatile
+ *   Config): per-role model/fallback configuration plus the last selected role
+ *   per session, persisted through the harness settings service into the
+ *   profile patch;
  * - process-local session overrides: the role picked in the composer applies
- *   immediately to the live agent without waiting for the settings write;
+ *   immediately to the live agent without waiting for the config write;
  * - omo-default fallback resolution: when a role has no user-configured
  *   fallbacks, the registry matches omo's `AGENT_MODEL_REQUIREMENTS` model ids
  *   against dsh's live `llm` catalog (recomputed on `llm/adapters-updated`).
@@ -15,12 +16,14 @@
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-llm'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+import {
+  fromStoredRoleConfig, toStoredRoleConfig,
+} from './core/omo-settings.ts'
 import {
   OMO_DEFAULT_ROLE, OMO_ROLES, OMO_ROLE_FALLBACK_MODELS, OMO_ROLE_FALLBACK_PROVIDERS, emptyRoleConfig, isOmoRole, normalizeOmoRole,
 } from './core/omo-roles.ts'
 import type {
-  OmoModelSelection, OmoRoleConfig, OmoRoleSettings, OmoUltraworkOverride, StoredOmoRoleConfig,
+  OmoModelSelection, OmoRoleConfig, StoredOmoRoleConfig,
 } from './core/omo-roles.ts'
 
 export type {
@@ -29,6 +32,7 @@ export type {
 export {
   OMO_DEFAULT_ROLE, OMO_ROLES, OMO_ROLE_FALLBACK_MODELS, OMO_ROLE_FALLBACK_PROVIDERS, emptyRoleConfig, isOmoRole, normalizeOmoRole,
 } from './core/omo-roles.ts'
+export { toStoredRoleConfig as normalizeRoleConfig } from './core/omo-settings.ts'
 
 /** Minimal llm face used for catalog matching. */
 interface LlmFace {
@@ -40,14 +44,14 @@ interface LlmFace {
 export interface OmoRoleRegistryFace {
   /** Shipped role catalog (static). */
   readonly roles: typeof OMO_ROLES
-  /** Role selected for one session (settings-backed; default sisyphus). */
+  /** Role selected for one session (config-backed; default sisyphus). */
   roleFor(sessionId: string): string
   /** Persist the role selected for one session. */
   setRole(sessionId: string, role: string): Promise<void>
   /**
    * Synchronously pin a session's role (child spawn) so the next prompt
    * assembly sees it. Persistence is best-effort; the in-memory override wins
-   * for this process even if the settings write fails.
+   * for this process even if the config write fails.
    */
   pinRole(sessionId: string, role: string): void
   /** Resolved per-role model routing configuration (user layer only). */
@@ -66,6 +70,14 @@ export interface OmoRoleRegistryFace {
   fallbackModelsFor(role: string): OmoModelSelection[]
   /** Catalog-resolved omo default primary per role (no user settings applied). */
   defaults(): Record<string, OmoModelSelection | null>
+  /**
+   * Whether the running harness's own `@deepseek-ai/dsh-agent-loop` honors
+   * `PreStepDecision.assistantPrefill` (patch
+   * `patches/0001-agent-pre-step-assistant-prefill.patch`). The preset driver
+   * asks this instead of probing its own module tree, which can hold an
+   * unpatched published copy.
+   */
+  honorsAssistantPrefill(): boolean
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -74,72 +86,53 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Service plugin config handed to the constructor by the owning apply(). */
-export interface OmoRoleRegistryConfig {
-  /** The settings namespace owner scope registered by the host plugin. */
-  readonly settings: SettingsScope<OmoRoleSettings>
-}
-
-function normalizeModel(model: OmoModelSelection): OmoModelSelection {
-  if (typeof model?.provider !== 'string' || model.provider === '' || typeof model?.model !== 'string' || model.model === '') {
-    throw new TypeError('model must be {provider, model} with non-empty strings')
-  }
-  return {
-    provider: model.provider,
-    model: model.model,
-    ...(typeof model.reasoningEffort === 'string' && model.reasoningEffort !== ''
-      ? { reasoningEffort: model.reasoningEffort }
-      : {}),
-  }
-}
-
-/** Normalize one role config for storage (rejects malformed wire shapes). */
-export function normalizeRoleConfig(config: OmoRoleConfig): StoredOmoRoleConfig {
-  if (config === null || typeof config !== 'object') return { model: null, fallbackModels: [] }
-  const model = config.model === undefined || config.model === null ? null : normalizeModel(config.model)
-  const fallbackModels = Array.isArray(config.fallbackModels)
-    ? config.fallbackModels.map(normalizeModel)
-    : []
-  const maxSteps = typeof config.maxSteps === 'number' && Number.isSafeInteger(config.maxSteps) && config.maxSteps > 0
-    ? config.maxSteps
-    : undefined
-  const ultraworkInput = config.ultrawork
-  const ultraworkModel = ultraworkInput !== null && typeof ultraworkInput === 'object'
-    ? (ultraworkInput as OmoUltraworkOverride).model
-    : undefined
-  // Legacy profiles may store `ultrawork: { model: {} }`. Treat an invalid
-  // ultrawork model as "no override" instead of failing the write; the same
-  // tolerance lets a raw catalog config round-trip without being rejected.
-  const ultrawork = ultraworkInput !== null && typeof ultraworkInput === 'object'
-    ? {
-      ...(ultraworkModel !== undefined && ultraworkModel !== null && typeof ultraworkModel === 'object'
-        && typeof ultraworkModel.provider === 'string' && ultraworkModel.provider !== ''
-        && typeof ultraworkModel.model === 'string' && ultraworkModel.model !== ''
-        ? { model: normalizeModel(ultraworkModel) }
-        : {}),
-      ...(typeof ultraworkInput.reasoningEffort === 'string' && ultraworkInput.reasoningEffort !== ''
-        ? { reasoningEffort: ultraworkInput.reasoningEffort }
-        : {}),
-    }
-    : undefined
-  const cleanedUltrawork = ultrawork !== undefined && Object.keys(ultrawork).length > 0 ? ultrawork : undefined
-  return {
-    model,
-    fallbackModels,
-    ...(maxSteps === undefined ? {} : { maxSteps }),
-    ...(cleanedUltrawork === undefined ? {} : { ultrawork: cleanedUltrawork }),
-  }
+/** One durable config patch written back into the owning profile entry. */
+export interface OmoRoleConfigPatch {
+  /** Complete stored roles map (only when this write changed a role). */
+  readonly roles?: Record<string, StoredOmoRoleConfig>
+  /** Complete session → role map (only when this write changed a session). */
+  readonly sessions?: Record<string, string>
 }
 
 /**
- * Host service body. Constructed with `ctx.plugin(OmoRoleRegistry, {settings})`
- * from the package's host apply; the driver reaches it through the preset
- * standing scope's `ctx.get('omoRoles')`.
+ * Service plugin config handed to the constructor by the owning apply().
+ *
+ * On dsh 0.1.7 a plugin's configurable values live in its own Cordis Config
+ * with `.volatile()` fields; the owning apply reads them and hands the
+ * registry accessor closures plus the entry-scoped persistence callback, so
+ * the registry never depends on the settings service shape.
+ */
+export interface OmoRoleRegistryConfig {
+  /** Live stored role configs (the entry's volatile `roles` field). */
+  readonly roles: () => Record<string, StoredOmoRoleConfig>
+  /** Live session → role map (the entry's volatile `sessions` field). */
+  readonly sessions: () => Record<string, string>
+  /**
+   * Persist a patch into the owning profile entry's Config through
+   * `ctx.settings.update(entryId, patch)`. Undefined in compositions without
+   * a configurable profile entry (headless/test mounts): the in-memory
+   * override still applies for the process.
+   */
+  readonly persist?: (patch: OmoRoleConfigPatch) => Promise<void>
+  /**
+   * Whether the running harness's loop ships the assistant-prefill seam
+   * (probed by the owning apply against the dsh installation anchor).
+   */
+  readonly assistantPrefillSeam?: boolean
+}
+
+/**
+ * Host service body. Constructed with `ctx.plugin(OmoRoleRegistry, { roles,
+ * sessions, persist })` from the package's host apply; the driver reaches it
+ * through the preset standing scope's `ctx.get('omoRoles')`.
  */
 export class OmoRoleRegistry extends Service {
   static inject = ['llm']
 
-  private readonly settings: SettingsScope<OmoRoleSettings>
+  private readonly readRoles: () => Record<string, StoredOmoRoleConfig>
+  private readonly readSessions: () => Record<string, string>
+  private readonly persist: ((patch: OmoRoleConfigPatch) => Promise<void>) | undefined
+  private readonly assistantPrefillSeam: boolean
   private readonly llm: LlmFace
   private readonly sessionOverrides = new Map<string, string>()
   private readonly defaultFallbacks = new Map<string, OmoModelSelection[]>()
@@ -147,9 +140,10 @@ export class OmoRoleRegistry extends Service {
 
   constructor(ctx: Context, config: OmoRoleRegistryConfig) {
     super(ctx, 'omoRoles')
-    // The schema output type is structurally equivalent; cast keeps the
-    // registry face named rather than leaking schemastery's Dict type.
-    this.settings = config.settings as unknown as SettingsScope<OmoRoleSettings>
+    this.readRoles = config.roles
+    this.readSessions = config.sessions
+    this.persist = config.persist
+    this.assistantPrefillSeam = config.assistantPrefillSeam === true
     this.llm = ctx.get('llm') as LlmFace
     this.ctx.effect(() => {
       const off = this.ctx.on('llm/adapters-updated', () => { void this.refreshDefaultFallbacks() })
@@ -162,10 +156,29 @@ export class OmoRoleRegistry extends Service {
     return OMO_ROLES
   }
 
+  /** Stored role configs, tolerating legacy malformed values on read. */
+  private storedRoles(): Record<string, StoredOmoRoleConfig> {
+    try {
+      return this.readRoles() ?? {}
+    } catch {
+      // A detached config reference (plugin unloading) must not break a
+      // prompt assembly that is already in flight.
+      return {}
+    }
+  }
+
+  private storedSessions(): Record<string, string> {
+    try {
+      return this.readSessions() ?? {}
+    } catch {
+      return {}
+    }
+  }
+
   roleFor(sessionId: string): string {
     const override = this.sessionOverrides.get(sessionId)
     if (override !== undefined) return override
-    const stored = this.settings.get().sessions[sessionId]
+    const stored = this.storedSessions()[sessionId]
     return normalizeOmoRole(stored)
   }
 
@@ -174,9 +187,7 @@ export class OmoRoleRegistry extends Service {
     const previous = this.sessionOverrides.get(sessionId)
     this.sessionOverrides.set(sessionId, role)
     try {
-      await this.settings.update({
-        sessions: { ...this.settings.get().sessions, [sessionId]: role },
-      })
+      await this.persist?.({ sessions: { ...this.storedSessions(), [sessionId]: role } })
     } catch (error) {
       if (previous === undefined) this.sessionOverrides.delete(sessionId)
       else this.sessionOverrides.set(sessionId, previous)
@@ -187,51 +198,36 @@ export class OmoRoleRegistry extends Service {
   pinRole(sessionId: string, role: string): void {
     if (!isOmoRole(role)) throw new TypeError(`unknown omo role "${role}"`)
     this.sessionOverrides.set(sessionId, role)
-    void this.settings.update({
-      sessions: { ...this.settings.get().sessions, [sessionId]: role },
-    }).catch(() => {
+    void this.persist?.({ sessions: { ...this.storedSessions(), [sessionId]: role } }).catch(() => {
       // The override already applies for this process.
     })
   }
 
   configFor(role: string): OmoRoleConfig {
-    const stored = this.settings.get().roles[normalizeOmoRole(role)]
+    const stored = this.storedRoles()[normalizeOmoRole(role)]
     if (stored === undefined) return emptyRoleConfig()
-    return {
-      ...(stored.model === null || stored.model === undefined ? {} : { model: stored.model }),
-      fallbackModels: stored.fallbackModels ?? [],
-      ...(stored.maxSteps === undefined ? {} : { maxSteps: stored.maxSteps }),
-      ...(stored.ultrawork === undefined ? {} : { ultrawork: stored.ultrawork }),
-    }
+    return fromStoredRoleConfig(stored)
   }
 
   async setRoleConfig(role: string, config: OmoRoleConfig): Promise<void> {
     if (!isOmoRole(role)) throw new TypeError(`unknown omo role "${role}"`)
-    const normalized = normalizeRoleConfig(config)
-    await this.settings.update({
-      roles: { ...this.settings.get().roles, [role]: normalized },
-    })
+    const normalized = toStoredRoleConfig(config)
+    await this.persist?.({ roles: { ...this.storedRoles(), [role]: normalized } })
   }
 
   configs(): Record<string, OmoRoleConfig> {
-    const settings = this.settings.get()
+    const settings = this.storedRoles()
     return Object.fromEntries(OMO_ROLES.map(role => {
-      const stored = settings.roles[role.id]
-      return [role.id, stored === undefined
-        ? emptyRoleConfig()
-        : {
-          ...(stored.model === null || stored.model === undefined ? {} : { model: stored.model }),
-          fallbackModels: stored.fallbackModels ?? [],
-          ...(stored.maxSteps === undefined ? {} : { maxSteps: stored.maxSteps }),
-          ...(stored.ultrawork === undefined ? {} : { ultrawork: stored.ultrawork }),
-        }]
+      const stored = settings[role.id]
+      return [role.id, stored === undefined ? emptyRoleConfig() : fromStoredRoleConfig(stored)]
     }))
   }
 
   primaryModelFor(role: string): OmoModelSelection | undefined {
     const id = normalizeOmoRole(role)
-    const stored = this.settings.get().roles[id]
-    // `model: null` is the explicit "follow session model" choice.
+    const stored = this.storedRoles()[id]
+    // `model: null` is the explicit "follow session model" choice; an absent
+    // `model` still resolves the omo-default primary below.
     if (stored?.model === null) return undefined
     if (stored?.model !== undefined) return { ...stored.model }
     return this.defaultFallbacks.get(id)?.[0]
@@ -255,6 +251,10 @@ export class OmoRoleRegistry extends Service {
       ? 0
       : chain.findIndex(entry => entry.provider === primary.provider && entry.model === primary.model)
     return index < 0 ? [] : [...chain.slice(index + 1)]
+  }
+
+  honorsAssistantPrefill(): boolean {
+    return this.assistantPrefillSeam
   }
 
   /** Match omo's model-id fallback table against dsh's live catalog. */

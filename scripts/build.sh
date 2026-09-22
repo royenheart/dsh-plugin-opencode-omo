@@ -12,5 +12,8 @@ if [[ ! -x node_modules/.bin/tsc || ! -x node_modules/.bin/tsdown ]]; then
   exit 1
 fi
 
+# Regenerate the bundle patch from its sources first, so a template or preset
+# composition edit can never ship a stale preset declaration.
+node scripts/build-preset-patch.mjs
 node_modules/.bin/tsc --noEmit -p tsconfig.json
 node_modules/.bin/tsdown

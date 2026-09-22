@@ -40,10 +40,10 @@ function mockModules(react, jsxRuntime) {
     '@deepseek-ai/dsh-client-ui-slots': {},
     '@deepseek-ai/dsh-client-web-react': {},
     '@deepseek-ai/dsh-client-ui-primitives': {
-      IconAgentPresetOutline16: () => null,
-      IconChevronDownOutline14: () => null,
-      IconPlusOutline16: () => null,
-      IconCloseOutline16: () => null,
+      IconAgentPresetOutlineRegular: () => null,
+      IconChevronDownOutlineRegular: () => null,
+      IconPlusOutlineMedium: () => null,
+      IconCloseOutlineRegular: () => null,
       Menu: ({ anchor }) => anchor ?? null,
       Modal: () => null,
     },
@@ -51,11 +51,11 @@ function mockModules(react, jsxRuntime) {
   }
 }
 
-function fakeScope(snapshot = { status: 'unavailable' }) {
+function fakeForm(snapshot = { status: 'unavailable' }) {
   return {
     getSnapshot: () => snapshot,
     subscribe: () => () => {},
-    set: async () => {},
+    set: async () => true,
   }
 }
 
@@ -79,7 +79,7 @@ test('client bundle loads under the module loader and exports the plugin face', 
     { jsx: () => null, jsxs: () => null },
   ))
   assert.equal(exportsObj.name, 'opencode-omo-client')
-  assert.equal(JSON.stringify(exportsObj.inject), JSON.stringify(['slots', 'settingsScope', 'connection', 'remote', 'remote.session']))
+  assert.equal(JSON.stringify(exportsObj.inject), JSON.stringify(['slots', 'configForms', 'connection', 'remote', 'remote.session']))
   assert.equal(typeof exportsObj.apply, 'function')
   assert.equal(exportsObj.OMO_ROLE_SETTINGS_NAMESPACE, 'opencode-omo-roles')
   assert.equal(exportsObj.ROLES_ENDPOINT, undefined)
@@ -89,11 +89,11 @@ test('client bundle loads under the module loader and exports the plugin face', 
 
 test('settings section and role chip render with the hybrid settings store', () => {
   const exportsObj = evaluateBundle(mockModules(React, JsxRuntime))
-  const scope = fakeScope()
+  const form = fakeForm()
   const rpc = fakeRpc()
 
   const settingsHtml = renderToString(React.createElement(exportsObj.RoleSettingsSection, {
-    scope,
+    form,
     rpc,
     loadModels: async () => [{ provider: 'openai', model: 'gpt-5.5', label: 'gpt-5.5' }],
   }))
@@ -102,7 +102,7 @@ test('settings section and role chip render with the hybrid settings store', () 
 
   const roleHtml = renderToString(React.createElement(exportsObj.RoleSelect, {
     sessionId: 'session-1',
-    scope,
+    form,
     rpc,
     selectModel: async () => true,
     useSessions: selector => selector({ byId: { 'session-1': { agentPreset: 'opencode-omo' } } }),

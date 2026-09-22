@@ -2,16 +2,23 @@
 """Install/uninstall the @royenheart/dsh-plugin-opencode-omo plugin into a dsh profile.
 
 The plugin is a dsh BUNDLE whose patch inserts its host row (role registry +
-settings + browser routes). The `opencode-omo` AGENT PRESET is published
-through dsh's native user preset root (`$DSH_HOME/.agent-presets`), which the
-agent-presets service always scans, so no dsh-side preset-root patch is needed.
+volatile role Config + authenticated browser RPC) and the `opencode-omo` AGENT
+PRESET as a `@deepseek-ai/dsh-agent-preset`-shaped declaration row
+(`presets/opencode-omo/preset-row.mjs`: the official config and EntryGroup
+contract, but registration through `agentPresets` once that service exists, so
+a headless composition has no pending loader entry). 0.1.7 presets are
+declaration rows in a bundle/profile patch; the former
+`$DSH_HOME/.agent-presets` directory root is no longer read by dsh.
 
 Installing it requires:
 
 1. a symlink of the package into the profile node_modules,
-2. adding it to the profile dsh.profile.bundles list (plus a link: dependency),
-   and
-3. a symlink `$DSH_HOME/.agent-presets/opencode-omo` to the package's preset.
+2. adding it to the profile dsh.profile.bundles list (plus a link: dependency);
+   the bundle patch then declares both the host row and the preset.
+
+`cordis.patch.yml` is generated from `cordis.patch.template.yml` plus
+`presets/opencode-omo/agent.cordis.yml` by `scripts/build-preset-patch.mjs`
+during `npm run build`.
 
 Usage:
     python3 install.py install [--profile web] [--home ~/.dsh]
@@ -100,42 +107,6 @@ def ensure_link(link: Path, target: Path) -> None:
     elif link.exists():
         raise SystemExit("refusing to overwrite existing path: " + str(link))
     link.symlink_to(target, target_is_directory=True)
-
-
-def user_preset_dir(home: str) -> Path:
-    """dsh-agent-presets' native user root, appended to every roster."""
-    return Path(home).expanduser() / ".agent-presets"
-
-
-def ensure_user_preset_link(root: Path, home: str) -> None:
-    """Publish the shipped preset through dsh's user preset root.
-
-    `dsh-agent-presets` resolves `$DSH_HOME/.agent-presets` after every
-    configured root (includeUserRoot defaults to true). Discovery only accepts
-    REAL directories as roster rows (`dirent.isDirectory()` does not follow
-    symlinks), so the preset id is a real directory whose entries are symlinked
-    into the package. Updates to shipped preset files therefore stay live
-    without reinstalling.
-    """
-    source = root / "presets" / "opencode-omo"
-    preset = user_preset_dir(home) / "opencode-omo"
-    if preset.is_symlink():
-        preset.unlink()
-    preset.mkdir(parents=True, exist_ok=True)
-    if preset.exists() and not preset.is_dir():
-        raise SystemExit("refusing to overwrite non-directory path: " + str(preset))
-    for existing in preset.iterdir():
-        if not existing.is_symlink():
-            continue
-        try:
-            target = Path(os.readlink(existing)).resolve()
-        except OSError:
-            existing.unlink()
-            continue
-        if target != source.resolve() and source.resolve() not in target.parents:
-            existing.unlink()
-    for entry in sorted(source.iterdir()):
-        ensure_link(preset / entry.name, entry)
 
 
 def ensure_built(root: Path) -> None:
@@ -236,7 +207,6 @@ def install(args: argparse.Namespace) -> None:
     ensure_preset_runtime_links(root, args.home)
     ensure_lsp_links(args.home)
     check_lsp_servers()
-    ensure_user_preset_link(root, args.home)
 
     # 1. Symlink the package into the profile node_modules (idempotent).
     target = root
@@ -287,7 +257,10 @@ def uninstall(args: argparse.Namespace) -> None:
     else:
         print("no link present:", link)
 
-    preset = user_preset_dir(args.home) / "opencode-omo"
+    # Pre-0.1.7 installs published the preset under $DSH_HOME/.agent-presets;
+    # dsh no longer reads that root, so uninstall removes only the symlinks it
+    # owns and leaves any foreign content alone.
+    preset = Path(args.home).expanduser() / ".agent-presets" / "opencode-omo"
     source = (repo_root() / "presets" / "opencode-omo").resolve()
     if preset.is_dir() and not preset.is_symlink():
         removed = False
@@ -305,11 +278,13 @@ def uninstall(args: argparse.Namespace) -> None:
             preset.rmdir()
         except OSError:
             pass
-        print("removed preset root entries:" if removed else "no owned preset root entries:", preset)
+        print("removed legacy preset root entries:" if removed else "no owned legacy preset root entries:", preset)
     elif preset.is_symlink():
         print("skipping legacy preset root symlink (remove manually):", preset)
     else:
-        print("no preset root directory present:", preset)
+        print("no legacy preset root directory present:", preset)
+
+        print("no legacy preset root directory present:", preset)
 
     if manifest_path.exists():
         data = read_json(manifest_path)

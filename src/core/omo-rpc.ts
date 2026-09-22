@@ -1,9 +1,10 @@
 /**
  * RPC contract for the opencode-omo browser surface.
  *
- * The browser normally reads/writes the `opencode-omo-roles` settings
- * namespace through `settingsScope`. On a non-loopback page that scope is
- * memory-mode (`status: 'unavailable'`), so the client falls back to this
+ * The browser normally reads/writes the `opencode-omo-roles` profile entry
+ * through `ctx.configForms.get(entryId)` (the Config-derived settings form).
+ * On a non-loopback page dsh deliberately resolves that form to memory mode
+ * (`status: 'unavailable'`, writes refused), so the client falls back to this
  * authenticated logical channel, which the host plugin registers with
  * `ctx.connection.rpc.handle(OMO_RPC_CHANNEL, handler)`.
  *

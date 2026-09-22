@@ -1,26 +1,40 @@
 /**
  * Client role store: one reactive snapshot over the opencode-omo role data.
  *
- * Loopback browsers read/write through `settingsScope` (the canonical settings
- * transport). Non-loopback browsers get a memory-mode scope (`unavailable`), so
- * the store falls back to the authenticated `/opencode-omo` RPC channel the
- * host plugin registers through `connection.rpc.handle`.
+ * Loopback browsers read/write through `ctx.configForms` — the harness's
+ * Config-derived form for this plugin's profile entry (0.1.7; the former
+ * `settingsScope` service is gone). A non-loopback browser deliberately gets a
+ * memory-mode form (`unavailable`), so the store falls back to the
+ * authenticated `/opencode-omo` RPC channel the host plugin registers through
+ * `connection.rpc.handle`.
  *
  * The store itself is React-free so the transport selection can be unit-tested
  * with plain Node; components subscribe through `useSyncExternalStore`.
  */
 
 import { OMO_DEFAULT_ROLE, OMO_ROLES } from '../core/omo-roles.ts'
-import { normalizeOmoSettingsSection, type OmoSettingsSection } from '../core/omo-settings.ts'
+import {
+  normalizeOmoSettingsSection, toStoredRoleConfig, type OmoSettingsSection,
+} from '../core/omo-settings.ts'
+import type { StoredOmoRoleConfig } from '../core/omo-roles.ts'
 import { OMO_RPC_CHANNEL, OMO_RPC_ENDPOINTS } from '../core/omo-rpc.ts'
 import type { OmoRoleConfig } from '../core/omo-roles.ts'
 import type { OmoModelSelection, OmoRolesState, OmoRoleView } from './omo-wire.ts'
 
-/** The settings-scope face this client consumes. */
-export interface OmoSettingsScope {
-  getSnapshot(): { status: string; value?: OmoSettingsSection }
+/** The stored shape one Config form carries for this entry. */
+export interface OmoStoredSection {
+  readonly roles: Record<string, StoredOmoRoleConfig>
+  readonly sessions: Record<string, string>
+}
+
+/**
+ * The `ConfigForm` face this client consumes (structurally the harness
+ * `ctx.configForms.get(entryId)` result).
+ */
+export interface OmoConfigForm {
+  getSnapshot(): { status: string; value?: unknown }
   subscribe(listener: () => void): () => void
-  set(field: 'roles' | 'sessions', value: unknown): Promise<void>
+  set(field: 'roles' | 'sessions', value: unknown): Promise<boolean>
 }
 
 /** Result shape returned by the connection RPC caller. */
@@ -77,6 +91,21 @@ function normalizeConfigs(raw: unknown): Record<string, OmoRoleConfig> {
   return normalizeOmoSettingsSection({ roles: raw }).roles
 }
 
+/** Read the stored section out of one Config-form snapshot. */
+function storedSectionOf(snapshot: { status: string; value?: unknown } | undefined): OmoSettingsSection {
+  const section = snapshot?.status === 'ready' ? snapshot.value : undefined
+  return normalizeOmoSettingsSection(section)
+}
+
+/** The stored (write-back) shape of one form snapshot, preserving `model: null`. */
+function storedWriteShape(snapshot: { status: string; value?: unknown } | undefined): OmoStoredSection {
+  const value = snapshot?.status === 'ready' && isRecord(snapshot.value) ? snapshot.value : {}
+  return {
+    roles: isRecord(value.roles) ? value.roles as Record<string, StoredOmoRoleConfig> : {},
+    sessions: isRecord(value.sessions) ? value.sessions as Record<string, string> : {},
+  }
+}
+
 function normalizeCatalogRoles(raw: unknown): readonly OmoRoleView[] {
   if (!Array.isArray(raw)) return OMO_ROLES
   const roles = raw.filter((entry): entry is OmoRoleView => isRecord(entry)
@@ -95,15 +124,22 @@ function normalizeCatalogRoles(raw: unknown): readonly OmoRoleView[] {
 export class OmoRolesStore {
   private state: OmoRolesState = { ...EMPTY_STATE }
   private readonly listeners = new Set<() => void>()
-  private unsubscribeScope: (() => void) | undefined
+  private readonly form: OmoConfigForm | undefined
+  private readonly rpc: OmoRpcCaller | undefined
+  private readonly sessionId: string | undefined
+  private unsubscribeForm: (() => void) | undefined
   private started = false
   private loadingRemote = false
 
   constructor(
-    private readonly scope: OmoSettingsScope | undefined,
-    private readonly rpc: OmoRpcCaller | undefined,
-    private readonly sessionId: string | undefined,
-  ) {}
+    form: OmoConfigForm | undefined,
+    rpc: OmoRpcCaller | undefined,
+    sessionId: string | undefined,
+  ) {
+    this.form = form
+    this.rpc = rpc
+    this.sessionId = sessionId
+  }
 
   getSnapshot = (): OmoRolesState => {
     return this.state
@@ -114,33 +150,33 @@ export class OmoRolesStore {
     return () => { this.listeners.delete(listener) }
   }
 
-  /** Start scope subscription and the initial remote catalog read. Idempotent. */
+  /** Start form subscription and the initial remote catalog read. Idempotent. */
   start(): () => void {
     if (this.started) return () => {}
     this.started = true
-    if (this.scope !== undefined) {
-      this.unsubscribeScope = this.scope.subscribe(() => { this.refreshFromScope() })
+    if (this.form !== undefined) {
+      this.unsubscribeForm = this.form.subscribe(() => { this.refreshFromForm() })
     }
-    this.refreshFromScope()
+    this.refreshFromForm()
     void this.loadRemoteCatalog()
     return () => {
-      this.unsubscribeScope?.()
-      this.unsubscribeScope = undefined
+      this.unsubscribeForm?.()
+      this.unsubscribeForm = undefined
       this.started = false
     }
   }
 
   /** Persist one session's role. */
   async setRole(sessionId: string, role: string): Promise<void> {
-    const snapshot = this.scope?.getSnapshot()
-    if (this.scope !== undefined && snapshot?.status === 'ready') {
-      const section = snapshot.value ?? { roles: {}, sessions: {} }
-      const sessions = { ...section.sessions, [sessionId]: role }
+    const snapshot = this.form?.getSnapshot()
+    if (this.form !== undefined && snapshot?.status === 'ready') {
+      const sessions = { ...storedWriteShape(snapshot).sessions, [sessionId]: role }
       this.publish({ ...this.state, sessions, currentRole: role, error: null })
       try {
-        await this.scope.set('sessions', sessions)
+        const accepted = await this.form.set('sessions', sessions)
+        if (!accepted) throw new Error('opencode-omo role settings write was refused')
       } catch (cause) {
-        this.refreshFromScope()
+        this.refreshFromForm()
         this.publish({ ...this.state, error: cause instanceof Error ? cause.message : String(cause) })
         throw cause
       }
@@ -170,15 +206,18 @@ export class OmoRolesStore {
 
   /** Persist one role's model/fallback configuration. */
   async setRoleConfig(role: string, config: OmoRoleConfig): Promise<void> {
-    const snapshot = this.scope?.getSnapshot()
-    if (this.scope !== undefined && snapshot?.status === 'ready') {
-      const section = snapshot.value ?? { roles: {}, sessions: {} }
-      const roles = { ...section.roles, [role]: config }
+    const snapshot = this.form?.getSnapshot()
+    if (this.form !== undefined && snapshot?.status === 'ready') {
+      // Write the STORED shape: `model: null` is the explicit "follow session"
+      // choice, and preserving every other role's stored entry keeps its own
+      // null/absent distinction (the omo-default primary).
+      const roles = { ...storedWriteShape(snapshot).roles, [role]: toStoredRoleConfig(config) }
       this.publish({ ...this.state, configs: { ...this.state.configs, [role]: config }, error: null })
       try {
-        await this.scope.set('roles', roles)
+        const accepted = await this.form.set('roles', roles)
+        if (!accepted) throw new Error('opencode-omo role settings write was refused')
       } catch (cause) {
-        this.refreshFromScope()
+        this.refreshFromForm()
         this.publish({ ...this.state, error: cause instanceof Error ? cause.message : String(cause) })
         throw cause
       }
@@ -208,12 +247,12 @@ export class OmoRolesStore {
     throw error
   }
 
-  /** Re-read configs/sessions from the settings scope. */
-  private refreshFromScope(): void {
-    const snapshot = this.scope?.getSnapshot()
+  /** Re-read configs/sessions from the Config form. */
+  private refreshFromForm(): void {
+    const snapshot = this.form?.getSnapshot()
     if (snapshot === undefined) return
     if (snapshot.status === 'ready') {
-      const section = snapshot.value ?? { roles: {}, sessions: {} }
+      const section = storedSectionOf(snapshot)
       this.publish({
         ...this.state,
         configs: section.roles,
@@ -255,8 +294,8 @@ export class OmoRolesStore {
           error: null,
         }
         this.publish(next)
-        // On loopback the settings scope is authoritative for configs/sessions.
-        this.refreshFromScope()
+        // On loopback the Config form is authoritative for configs/sessions.
+        this.refreshFromForm()
       } else {
         this.remoteFailed(result.error?.message ?? 'catalog/get failed')
       }
@@ -268,7 +307,7 @@ export class OmoRolesStore {
   }
 
   private remoteFailed(message: string): void {
-    if (this.scope?.getSnapshot().status === 'ready') {
+    if (this.form?.getSnapshot().status === 'ready') {
       // Loopback still works without the remote catalog (defaults stay empty).
       this.publish({ ...this.state, loading: false, degraded: false })
       return

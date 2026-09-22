@@ -633,7 +633,7 @@
       name: ./task-shim.mjs
 
     - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 

@@ -14,10 +14,15 @@
 // - Named specialist / task() children pin an omo role and keep this complete
 //   section (no static persona overlay), so they see `<env>` + the specialist
 //   body instead of the dsh harness identity.
-// - maxSteps + MAX_STEPS_PROMPT render as a system-prompt section at the
-//   ceiling (see `maxStepsSectionFor`); no dsh-side patch is used.
+// - maxSteps + MAX_STEPS_PROMPT: when the installed `@deepseek-ai/dsh-agent-loop`
+//   ships the general-purpose assistant-prefill seam
+//   (patches/0001-agent-pre-step-assistant-prefill.patch), `agent/pre-step`
+//   returns it and the ceiling text rides the request as a request-only
+//   assistant continuation, as in opencode. A stock loop keeps the
+//   system-prompt section fallback (see `maxStepsSectionFor`).
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { applyOmoDelegationCatalog } from './delegation-surface.mjs'
 import { applyOmoLspCatalog } from './lsp-surface.mjs'
@@ -27,6 +32,66 @@ import { roleForDelegationCall } from './task-shim.mjs'
 export const name = 'opencode-omo-loop'
 
 export const inject = ['systemPrompt', 'tools']
+
+/**
+ * Whether a resolved agent-loop entry module ships the assistant-prefill seam
+ * from `patches/0001-agent-pre-step-assistant-prefill.patch`. The loop is
+ * bundled into one entry module, so the field name compiled into that entry is
+ * the capability marker.
+ * @param entry - absolute path of a resolved `@deepseek-ai/dsh-agent-loop` entry.
+ * @returns true when the entry contains the marker.
+ */
+function entryHasAssistantPrefill(entry) {
+  try {
+    return readFileSync(entry, 'utf8').includes('assistantPrefill')
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Local probe used when the host registry is absent (the preset can run
+ * standalone). Resolution starts at this preset file, which the loader mounted
+ * from the profile tree; the host plugin's registry additionally probes the
+ * running dsh installation, which is authoritative when both exist.
+ * @returns true when `PreStepDecision.assistantPrefill` is honored.
+ */
+function detectAssistantPrefillSeam() {
+  try {
+    return entryHasAssistantPrefill(createRequire(import.meta.url).resolve('@deepseek-ai/dsh-agent-loop'))
+  } catch {
+    return false
+  }
+}
+
+export { entryHasAssistantPrefill, detectAssistantPrefillSeam, assistantPrefillSeamFor }
+
+/**
+ * The effective assistant-prefill capability. The host registry probes the
+ * running dsh installation's own `@deepseek-ai/dsh-agent-loop` (authoritative
+ * when the plugin checkout would otherwise resolve an unpatched published
+ * copy); the local probe covers a preset mounted without the host row.
+ * @param omoRoles - the host registry service, when present.
+ * @returns true when `agent/pre-step`'s `assistantPrefill` reaches the request.
+ */
+function assistantPrefillSeamFor(omoRoles) {
+  if (typeof omoRoles?.honorsAssistantPrefill === 'function') {
+    try {
+      return omoRoles.honorsAssistantPrefill() === true
+    } catch {
+      // Fall through to the local probe.
+    }
+  }
+  return detectAssistantPrefillSeam()
+}
+
+/**
+ * Whether the active loop honors `assistantPrefill`. Initialized from the
+ * local probe so a direct render sees the stock default; `apply` replaces it
+ * with the host registry's probe of the running dsh installation, and each
+ * session state snapshots it.
+ */
+let assistantPrefillSeamActive = detectAssistantPrefillSeam()
 
 const PERSONA_SECTION = 'deployment:persona'
 const PERSONA_ORDER = 0
@@ -755,9 +820,10 @@ function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
     : roleSystem ?? personaText()
   const buildSwitch = buildSwitchFor(session)
   const plan = activePlanPrompt(session)
-  // maxSteps + MAX_STEPS_PROMPT always ride the system prompt at the ceiling
-  // on stock 0.1.2 (see maxStepsSectionFor); no dsh-side patch path remains.
-  const maxStepsSection = maxStepsSectionFor(omoRoles, session)
+  // With the assistant-prefill seam the ceiling text travels as the request's
+  // trailing assistant continuation (`agent/pre-step` below), so the system
+  // prompt must not carry it too. A stock loop keeps the section fallback.
+  const maxStepsSection = state?.assistantPrefillSeam === true ? undefined : maxStepsSectionFor(omoRoles, session)
   const body = [
     ...(maxStepsSection === undefined ? [] : [maxStepsSection]),
     ...(buildSwitch === undefined ? [] : [buildSwitch]),
@@ -802,6 +868,8 @@ function newState() {
     resolvedRoutes: new Map(),
     lastRouteTurn: 0,
     ultraworkTurn: 0,
+    /** Whether this session's loop honors the request-only assistant prefill. */
+    assistantPrefillSeam: assistantPrefillSeamActive,
   }
 }
 
@@ -935,11 +1003,11 @@ function fallbackRetryable(failure) {
 export { fallbackRetryable }
 
 /**
- * Stock 0.1.2 maxSteps path: render opencode's MAX_STEPS_PROMPT as a
- * system-prompt section for the step that reaches the ceiling — the same
- * text and trigger as opencode, differing only in role (system prefix
- * instead of a trailing assistant continuation). The omo prompt re-renders
- * every step, so no dsh seam is needed.
+ * opencode maxSteps ceiling text for the step that reaches the configured
+ * cap. `agent/pre-step` turns it into a request-only assistant continuation
+ * when the installed loop ships the assistant-prefill seam; otherwise
+ * `renderOmoPrompt` renders the identical text as a system-prompt section
+ * (same text and trigger, system role instead of an assistant tail).
  */
 function maxStepsSectionFor(omoRoles, session) {
   const maxSteps = maxStepsFor(omoRoles, session)
@@ -947,7 +1015,22 @@ function maxStepsSectionFor(omoRoles, session) {
   return nextPosition(session).step >= maxSteps ? MAX_STEPS_PROMPT : undefined
 }
 
-export { maxStepsSectionFor }
+/**
+ * Add opencode's maxSteps continuation to one `agent/pre-step` decision for
+ * the assistant-prefill seam: below the cap the decision is returned
+ * unchanged, at the cap it carries the request-only `assistantPrefill`.
+ * @param omoRoles - the role registry carrying each role's maxSteps.
+ * @param session - the session whose logged position counts the next step.
+ * @param decision - the downstream enter/reject decision.
+ * @returns the decision, augmented at the ceiling.
+ */
+function withAssistantPrefill(omoRoles, session, decision) {
+  if (decision.kind !== 'enter') return decision
+  const prefill = maxStepsSectionFor(omoRoles, session)
+  return prefill === undefined ? decision : { ...decision, assistantPrefill: prefill }
+}
+
+export { maxStepsSectionFor, withAssistantPrefill }
 
 export function apply(ctx) {
   const states = new Map()
@@ -1051,6 +1134,23 @@ export function apply(ctx) {
       stateFor(agent).ultraworkTurn = turn
     }
   })
+
+  // opencode maxSteps continuation. Only registered when the loop honors the
+  // seam; the patched loop logs the text on `request/header` and appends it as
+  // the request's last assistant message without writing a session message.
+  const assistantPrefillSeam = assistantPrefillSeamFor(omoRoles)
+  assistantPrefillSeamActive = assistantPrefillSeam
+  if (assistantPrefillSeam) {
+    ctx.logger?.info?.('opencode-omo: assistantPrefill seam active; MAX_STEPS_PROMPT rides the request as an assistant continuation')
+    ctx.on('agent/pre-step', async (payload, next) => {
+      return withAssistantPrefill(omoRoles, payload.agent.session, await next())
+    })
+  } else {
+    ctx.logger?.info?.(
+      'opencode-omo: installed @deepseek-ai/dsh-agent-loop has no assistantPrefill seam; '
+      + 'MAX_STEPS_PROMPT renders as a system-prompt section (see patches/0001-agent-pre-step-assistant-prefill.patch)',
+    )
+  }
 
   // Role primary model + ultrawork override + omo sampling defaults. Prepend
   // for the same reason as the assembly listener: dsh's model-selection

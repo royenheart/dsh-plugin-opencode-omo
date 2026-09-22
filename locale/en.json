@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "opencode-omo",
+    "description": "opencode + oh-my-openagent (omo) mode: opencode's toolchain and complete system prompt, omo's multi-role orchestration, composer role picker, and per-role model/fallback settings."
+  }
+}

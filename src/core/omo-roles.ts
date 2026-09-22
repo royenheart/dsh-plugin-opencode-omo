@@ -36,15 +36,19 @@ export interface OmoUltraworkOverride {
   readonly reasoningEffort?: string | undefined
 }
 
-/** Stored settings shape: `model: null` records "follow the session model". */
+/**
+ * Stored configuration shape: `model: null` records the explicit "follow the
+ * session model" choice, while an absent `model` means "no user choice" and
+ * still resolves the omo-default primary.
+ */
 export interface StoredOmoRoleConfig {
-  readonly model: OmoModelSelection | null
+  readonly model?: OmoModelSelection | null | undefined
   readonly fallbackModels: OmoModelSelection[]
   readonly maxSteps?: number | undefined
   readonly ultrawork?: OmoUltraworkOverride | undefined
 }
 
-/** Persisted opencode-omo settings section shape. */
+/** Persisted opencode-omo configuration section shape. */
 export interface OmoRoleSettings {
   readonly roles: Record<string, StoredOmoRoleConfig>
   readonly sessions: Record<string, string>
