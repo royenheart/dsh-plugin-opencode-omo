@@ -55,19 +55,27 @@ export function parseModelKey(key: string): OmoModelSelection | undefined {
   return { provider: key.slice(0, separator), model: key.slice(separator + 2) }
 }
 
-/** Session list row face used to decide whether the composer role chip shows. */
+/**
+ * Session list row face used to decide whether the composer role chip shows.
+ * Both fields are `unknown` so any version's `SessionSummary` is structurally
+ * accepted without depending on the projection-map declaration merge; the
+ * reader narrows at runtime.
+ */
 export interface SessionPresetSummary {
-  readonly agentPreset?: string
-  readonly projectionValues?: { readonly agentPreset?: string | null }
+  readonly agentPreset?: unknown
+  readonly projectionValues?: unknown
 }
 
 /**
- * Read the session's agent-preset id. dsh 0.1.2 keeps it on
- * `projectionValues.agentPreset`; older list rows put it on the summary
- * itself. Empty / non-string values do not count.
+ * Read the session's agent-preset id. dsh keeps it on
+ * `projectionValues.agentPreset` (the client session-list summary); older list
+ * rows put it on the summary itself. Empty / non-string values do not count.
  */
 export function sessionAgentPreset(summary: SessionPresetSummary | undefined): string | undefined {
-  const projected = summary?.projectionValues?.agentPreset
+  const projections = summary?.projectionValues
+  const projected = projections !== null && typeof projections === 'object'
+    ? (projections as { agentPreset?: unknown }).agentPreset
+    : undefined
   if (typeof projected === 'string' && projected !== '') return projected
   if (typeof summary?.agentPreset === 'string' && summary.agentPreset !== '') return summary.agentPreset
   return undefined

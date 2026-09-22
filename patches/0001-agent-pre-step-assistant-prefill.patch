@@ -1,0 +1,290 @@
+diff --git a/docs/architecture.md b/docs/architecture.md
+index e09bc38..5096c4e 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -89,7 +89,7 @@ A **step** is one model request plus the tools it calls. A **turn** is zero or m
+ turn/start
+   claim next-step input plus one queued message
+   assemble prompt sections + tool schemas; project runtime context
+-  -> agent/pre-step                   reject | enter(messages, startsRequestSeries?)
++  -> agent/pre-step                   reject | enter(messages, startsRequestSeries?, assistantPrefill?)
+      reject, or a first enter rewritten empty -> close the turn with no step
+      step/start
+      agent/request -> prepareCall (cancellation commits neither system nor users)
+@@ -110,7 +110,7 @@ turn/end
+ 
+ One inbox feeds the driver; injected context waits for a waking message. AgentLoop’s durable `inbox` projection exposes pending input without live Agents.
+ 
+-`agent/pre-step` decides the accepted input. Listeners may rewrite or reject claimed messages; a rejected or empty first claim closes a durable turn without a step. An enter decision may set `startsRequestSeries`: the loop logs a fresh `request/header` (reason `series`, or `change` with `startsSeries: true` when the envelope also changed). Wrapping listeners preserve that declaration with `{ ...decision, messages }`. After assembly and `step/start`, `agent/request` and `prepareCall()` resolve the actual route before the system prompt and accepted users are committed; cancellation during either async phase commits neither. The prepared call capability governs prompt admission, not the preceding `request/context`. Every attempt synchronously reconciles the same rendered assembly, appends users only on the first attempt, logs header/context as needed, and derives and freezes the request before streaming the bound call. Retries do not repeat assembly or `agent/pre-step`. Surface replacements and image-offload decisions after attachment start a new request series, including during the first resumed pre-step; unchanged resume continues the series. The first admitted step reserves the system head before user messages even for an empty prompt (no wire message). The prompt travels only as `system/message` history: an empty rendering clears all active system nodes, leaving no old prompt model-visible; capable routes can append non-empty updates after the cached prefix; incapable routes and new request series consolidate non-empty prompt text at the first system node, with logged empty replacements for non-empty later system nodes ([decision](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md); [decision rule](../packages/core/agent-loop/README.md#understand-the-implementation)).
++`agent/pre-step` decides the accepted input. Listeners may rewrite or reject claimed messages; a rejected or empty first claim closes a durable turn without a step. An enter decision may set `startsRequestSeries`: the loop logs a fresh `request/header` (reason `series`, or `change` with `startsSeries: true` when the envelope also changed). Wrapping listeners preserve that declaration with `{ ...decision, messages }`. An enter decision may also set `assistantPrefill`: the loop appends that text as one request-only assistant message after the derived history and records it on the `request/header` snapshot, so reconstruction reproduces the request without a session message. After assembly and `step/start`, `agent/request` and `prepareCall()` resolve the actual route before the system prompt and accepted users are committed; cancellation during either async phase commits neither. The prepared call capability governs prompt admission, not the preceding `request/context`. Every attempt synchronously reconciles the same rendered assembly, appends users only on the first attempt, logs header/context as needed, and derives and freezes the request before streaming the bound call. Retries do not repeat assembly or `agent/pre-step`. Surface replacements and image-offload decisions after attachment start a new request series, including during the first resumed pre-step; unchanged resume continues the series. The first admitted step reserves the system head before user messages even for an empty prompt (no wire message). The prompt travels only as `system/message` history: an empty rendering clears all active system nodes, leaving no old prompt model-visible; capable routes can append non-empty updates after the cached prefix; incapable routes and new request series consolidate non-empty prompt text at the first system node, with logged empty replacements for non-empty later system nodes ([decision](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md); [decision rule](../packages/core/agent-loop/README.md#understand-the-implementation)).
+ 
+ The loop sends immutable requests while keeping cancellation live. It reuses message-freeze evidence only for identities it has fully frozen; [agent-loop](../packages/core/agent-loop/README.md) owns the request construction and cancellation-cause rules.
+ 
+diff --git a/docs/subsystems/core.md b/docs/subsystems/core.md
+index aa9af30..12c3eef 100644
+--- a/docs/subsystems/core.md
++++ b/docs/subsystems/core.md
+@@ -324,6 +324,13 @@ type PreStepDecision =
+     messages: UserMessage[]
+     /** Start a distinct model-message series before this step's admitted messages. */
+     startsRequestSeries?: true
++    /**
++     * Request-only assistant continuation appended after the derived history on
++     * every attempt of this step. The loop records it on the `request/header`
++     * snapshot and never appends a session message, so the transcript, stats,
++     * and compaction omit it while reconstruction still reproduces the request.
++     */
++    assistantPrefill?: string
+   }
+ ```
+ 
+diff --git a/docs/subsystems/core.zh.md b/docs/subsystems/core.zh.md
+index b18ff5b..f199228 100644
+--- a/docs/subsystems/core.zh.md
++++ b/docs/subsystems/core.zh.md
+@@ -332,6 +332,13 @@ type PreStepDecision =
+     messages: UserMessage[]
+     /** Start a distinct model-message series before this step's admitted messages. */
+     startsRequestSeries?: true
++    /**
++     * Request-only assistant continuation appended after the derived history on
++     * every attempt of this step. The loop records it on the `request/header`
++     * snapshot and never appends a session message, so the transcript, stats,
++     * and compaction omit it while reconstruction still reproduces the request.
++     */
++    assistantPrefill?: string
+   }
+ ```
+ 
+diff --git a/packages/core/agent-loop/README.md b/packages/core/agent-loop/README.md
+index 4c6d3df..8a5227e 100644
+--- a/packages/core/agent-loop/README.md
++++ b/packages/core/agent-loop/README.md
+@@ -90,7 +90,7 @@ The package is the one concrete implementation of the public `Agent` contract. I
+ 
+ ### Request headers and adapter defaults
+ 
+-After `agent/request`, `ctx.llm.prepareCall()` validates adapter-owned fields and resolves reasoning-effort and output-token defaults under the active turn signal. The loop retains that exact adapter through resolution, `request/header` logging, and dispatch. It writes a full header for the first request, a changed envelope (config or tools — the prompt is not part of the header), an explicit message-series start, a request after a surface replacement or image-offload decision, and resume; unchanged steps, retries, and ordinary later turns in the same series inherit the latest header, and an in-history prompt append is not a replacement, so the request that follows it inherits the header too. Beside the header, the loop logs `request/context` — provider, model, `contextWindow`, and the route's `systemPromptUpdate` mode from `prepareCall()` — only when one of those differs from the latest snapshot. Before the next waterfall, the loop removes adapter-default fields so the current route resolves them again, while explicit settings persist. An unhandled route still fails with `NO_ADAPTER`.
++After `agent/request`, `ctx.llm.prepareCall()` validates adapter-owned fields and resolves reasoning-effort and output-token defaults under the active turn signal. The loop retains that exact adapter through resolution, `request/header` logging, and dispatch. It writes a full header for the first request, a changed envelope (config, tools, or the `assistantPrefill` a pre-step decision declared — the prompt is not part of the header), an explicit message-series start, a request after a surface replacement or image-offload decision, and resume; unchanged steps, retries, and ordinary later turns in the same series inherit the latest header, and an in-history prompt append is not a replacement, so the request that follows it inherits the header too. Beside the header, the loop logs `request/context` — provider, model, `contextWindow`, and the route's `systemPromptUpdate` mode from `prepareCall()` — only when one of those differs from the latest snapshot. Before the next waterfall, the loop removes adapter-default fields so the current route resolves them again, while explicit settings persist. An unhandled route still fails with `NO_ADAPTER`.
+ 
+ The loop deep-freezes each derived message identity on its first request and reuses that proof only within the same agent. Restored messages keep their identity; request construction does not freeze their containing event wrappers. Each request freezes its local canonical header, fresh message array, and envelope while leaving the cancellation signal live. The [request-freeze decision](../../../.agents/notes/implemented/simplification/2026-09-06-agent-request-freeze-evidence.md) explains ownership and measurement.
+ 
+@@ -116,7 +116,7 @@ The loop is the production acquisition point for session write handles. When `ct
+ 
+ ### Turn and step flow
+ 
+-The driver owns one agent for its lifetime and runs inside `ctx.agents.withInitiator(agent, ...)`. `AgentLoop` registers the standard `inbox` projection for its service lifetime, so cold reads work before any Agent exists and after all Agents unload. Its package-internal `ReactLoopInbox` uses that shared projection for structural commands and loop-only claims. At a turn boundary it opens the durable turn, then atomically claims pending next-step input plus one queued prompt; between steps it claims only next-step input. The driver assembles the prompt and tools, projects runtime context, and runs `agent/pre-step`. A rejected decision or empty first batch opens no step. On the first attempt after acceptance, `step/start` precedes the `agent/request` waterfall and `prepareCall()`; neither async phase sees the pending system prompt or accepted users committed to history, and cancellation during either commits neither. For every attempt, the loop then synchronously reconciles the rendered prompt against the surviving `system/message` nodes using the prepared call capability, appends the accepted `user/message` batch only on the first attempt, logs the header and context as needed, and derives and freezes the request before streaming through that bound prepared call. Retries reuse the same rendered assembly without repeating assembly, `agent/pre-step`, or user admission. Reconciliation sees pre-step and retry compaction; a broken series consolidates the prompt at the head rather than appending an update after already-committed users. The request is `header.config`, `deriveMessages()`, and `header.tools`; it carries no `system` field. Each model attempt emits one process-local `start`, emits every `chunk` only after the matching durable assistant-frame settlement, and emits exactly one terminal `end`; final assembly or message-append failure settles it as `aborted`, while `committed` follows the durable `assistant/message`. Each successful model call appends one message anchor, and a cancelled stream appends an `interrupted: true` anchor with the delivered prefix so the next request contains what the user saw. Within a step, exclusive calls form barriers and parallel-safe calls use the bounded rolling pool; policy, durable results... (line truncated to 2000 chars)
++The driver owns one agent for its lifetime and runs inside `ctx.agents.withInitiator(agent, ...)`. `AgentLoop` registers the standard `inbox` projection for its service lifetime, so cold reads work before any Agent exists and after all Agents unload. Its package-internal `ReactLoopInbox` uses that shared projection for structural commands and loop-only claims. At a turn boundary it opens the durable turn, then atomically claims pending next-step input plus one queued prompt; between steps it claims only next-step input. The driver assembles the prompt and tools, projects runtime context, and runs `agent/pre-step`. A rejected decision or empty first batch opens no step. On the first attempt after acceptance, `step/start` precedes the `agent/request` waterfall and `prepareCall()`; neither async phase sees the pending system prompt or accepted users committed to history, and cancellation during either commits neither. For every attempt, the loop then synchronously reconciles the rendered prompt against the surviving `system/message` nodes using the prepared call capability, appends the accepted `user/message` batch only on the first attempt, logs the header and context as needed, and derives and freezes the request before streaming through that bound prepared call. Retries reuse the same rendered assembly without repeating assembly, `agent/pre-step`, or user admission. Reconciliation sees pre-step and retry compaction; a broken series consolidates the prompt at the head rather than appending an update after already-committed users. The request is `header.config`, `deriveMessages()` plus the header's request-only `assistantPrefill` message when present, and `header.tools`; it carries no `system` field. Each model attempt emits one process-local `start`, emits every `chunk` only after the matching durable assistant-frame settlement, and emits exactly one terminal `end`; final assembly or message-append failure settles it as `aborted`, while `committed` follows the durable `assistant/message`. Each successful model call appends one message anchor, and a cancelled stream appends an `interrupted: true` anchor with the delivered prefix so the next request contains what the user saw. Within a step, exclusive calls form barriers and parallel-safe calls use the bounded rolling pool; policy, durable results... (line truncated to 2000 chars)
+ 
+ Prompt admission uses the actual `prepareCall()` result, not the preceding `request/context`. With no system node, even an empty prompt is appended (reserving node 0 without a wire message). On an incapable route or at a new request series, a non-empty rendering is consolidated at the first system node: each non-empty later system node receives a logged per-node empty replacement, then the head is rewritten if needed. Dormant empty tails need no replacement and do not determine the effective text. Consolidation applies even when the latest effective text is unchanged. On a continuing `in-history` series, an unchanged effective prompt produces no event and a non-empty change appends. An empty rendering clears every non-empty later system node through a logged per-node empty replacement, then empties the head if needed, regardless of route or series state. No older instructions remain model-visible. An empty head with no active later system node means no prompt; repeated clears and resume leave it empty. A restored non-empty prompt follows the same route/series rule: a continuing capable route may append it, while an incapable route or new series refills the head. A step starts a series when the pre-step decision declares `startsRequestSeries`, when `session.surface.contentGeneration` changed since attachment or the last request (a replacement or image-offload decision), or when visible tool schemas changed. Resume and a provider or model swap alone continue the series; the prepared route still governs admission. Per-node empty replacements preserve intervening history without a surface delete operation.
+ 
+diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
+index 98114f5..c2b80d9 100644
+--- a/packages/core/agent-loop/src/agent.ts
++++ b/packages/core/agent-loop/src/agent.ts
+@@ -16,9 +16,10 @@ import type {
+   RequestErrorAction,
+ } from '@deepseek-ai/dsh-agent'
+ import { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
++import type { AssistantMessage, GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+ import {
+   LlmError,
++  MessageId,
+   createAssistantMessage,
+   errorChain,
+   markAgentLoopRequest,
+@@ -56,6 +57,7 @@ type PreparedStep =
+     kind: 'enter'
+     messages: UserMessage[]
+     startsRequestSeries?: true
++    assistantPrefill?: string
+     assembly: PromptAssembly
+   }
+ 
+@@ -68,6 +70,24 @@ function requestProposal(header: EpochHeader): LlmCallConfig {
+   return proposal
+ }
+ 
++/**
++ * Build the request-only assistant continuation for one prefill. The identity
++ * derives from the route alone, so a reconstructor rebuilding the request from
++ * the logged `request/header` snapshot produces the identical message.
++ * @param prefill - exact assistant text appended after the derived history.
++ * @param config - resolved call config the prefilled request runs under.
++ * @returns the frozen request-only assistant message.
++ */
++export function assistantPrefillMessage(prefill: string, config: LlmCallConfig): AssistantMessage {
++  const message: AssistantMessage = {
++    id: MessageId(`request-prefill:${config.provider}/${config.model}`),
++    role: 'assistant',
++    content: [{ type: 'text', text: prefill }],
++    source: { kind: 'model', provider: config.provider, model: config.model },
++  }
++  return deepFreeze(message)
++}
++
+ /**
+  * Read the cause `cancel()` passed when aborting a loop-owned signal, copying
+  * only the fields `turn/end` records. The live reason stays the caller's
+@@ -404,7 +424,9 @@ export class ReactLoopAgent implements Agent {
+         }
+       }
+       firstAttempt = false
+-      const request = this.buildRequest(config, preparedCall, assembly.tools, startsRequestSeries, signal)
++      const request = this.buildRequest(
++        config, preparedCall, assembly.tools, startsRequestSeries, signal, decision.assistantPrefill,
++      )
+       const live = new AssistantStreamAttempt(
+         this.session.id,
+         ++this.assistantAttemptCounter,
+@@ -584,6 +606,7 @@ export class ReactLoopAgent implements Agent {
+     tools: GenerateOptions['tools'] & object,
+     startsRequestSeries: boolean,
+     signal: AbortSignal,
++    assistantPrefill: string | undefined,
+   ): GenerateOptions {
+     const { session } = this
+     const surfaceGeneration = session.surface.contentGeneration
+@@ -591,6 +614,7 @@ export class ReactLoopAgent implements Agent {
+       config,
+       ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
+       ...tools.length > 0 ? { tools } : {},
++      ...assistantPrefill === undefined ? {} : { assistantPrefill },
+     })
+     const baseline = this.session.requestHeader()
+     const startsSeries = startsRequestSeries
+@@ -634,10 +658,16 @@ export class ReactLoopAgent implements Agent {
+       deepFreeze(message)
+       this.frozenMessages.add(message)
+     }
+-    Object.freeze(boundaryMessages)
++    // The prefill is request-only: it is appended after the frozen derived
++    // history, recorded on the header snapshot above, and never logged as a
++    // session message, so transcript, stats, and compaction omit it.
++    const messages: Message[] = assistantPrefill === undefined
++      ? boundaryMessages
++      : [...boundaryMessages, assistantPrefillMessage(assistantPrefill, config)]
++    Object.freeze(messages)
+     const request = markAgentLoopRequest(Object.freeze({
+       ...header.config,
+-      messages: boundaryMessages,
++      messages,
+       ...header.tools !== undefined ? { tools: header.tools } : {},
+       sessionId: this.session.id,
+       signal,
+diff --git a/packages/core/agent-loop/src/invariant.ts b/packages/core/agent-loop/src/invariant.ts
+index 3b1c62d..6927b1d 100644
+--- a/packages/core/agent-loop/src/invariant.ts
++++ b/packages/core/agent-loop/src/invariant.ts
+@@ -7,6 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
+ import { isAgentLoopRequest, type GenerateOptions } from '@deepseek-ai/dsh-llm'
+ import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+ import { foldRequestHeader } from '@deepseek-ai/dsh-session'
++import { assistantPrefillMessage } from './agent.ts'
+ 
+ const PACKAGE_NAME = '@deepseek-ai/dsh-agent-loop'
+ 
+@@ -37,7 +38,12 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
+     if (header === undefined) {
+       return fail('a loop-built request with no request/header event in its session log')
+     }
+-    const expected = session.deriveMessages()
++    // The request-only prefill is part of the logged header, not derived
++    // history: reconstruction appends it beside the durable derivation.
++    const derived = session.deriveMessages()
++    const expected = header.assistantPrefill === undefined
++      ? derived
++      : [...derived, assistantPrefillMessage(header.assistantPrefill, header.config)]
+     if (JSON.stringify(options.messages) !== JSON.stringify(expected)) {
+       fail(`llm request for session "${String(session.id)}" diverges from the dispatch-time durable derivation (log-reconstruction desync)`)
+     }
+diff --git a/packages/core/agent/README.md b/packages/core/agent/README.md
+index be003d7..5ccb1dc 100644
+--- a/packages/core/agent/README.md
++++ b/packages/core/agent/README.md
+@@ -82,7 +82,7 @@ The package is built on one separation: the public `Agent` surface and registry
+ 
+ ### Step admission
+ 
+-`PreStepDecision` is either `{ kind: 'reject' }` or `{ kind: 'enter', messages, startsRequestSeries? }`. The enter branch contains the complete identified, frozen message batch. Acceptance does not commit it: after assembly and `step/start`, `agent/request` and `prepareCall()` resolve the route before the loop commits the system prompt and user batch. Cancellation during either async phase commits neither. `startsRequestSeries: true` declares a distinct model-message series; a wrapping listener preserves that declaration and the batch unless it intentionally replaces either one. Claiming removes offered messages from the inbox, while messages inserted after the claim remain pending for a later boundary.
++`PreStepDecision` is either `{ kind: 'reject' }` or `{ kind: 'enter', messages, startsRequestSeries?, assistantPrefill? }`. The enter branch contains the complete identified, frozen message batch. Acceptance does not commit it: after assembly and `step/start`, `agent/request` and `prepareCall()` resolve the route before the loop commits the system prompt and user batch. Cancellation during either async phase commits neither. `startsRequestSeries: true` declares a distinct model-message series; a wrapping listener preserves that declaration and the batch unless it intentionally replaces either one. `assistantPrefill` is a request-only assistant continuation appended after the derived history and recorded on the `request/header` snapshot; it never becomes a session message, so the transcript, stats, and compaction omit it. Claiming removes offered messages from the inbox, while messages inserted after the claim remain pending for a later boundary.
+ 
+ ### Durable inbox
+ 
+diff --git a/packages/core/agent/README.zh.md b/packages/core/agent/README.zh.md
+index e360ba9..a5f9f0c 100644
+--- a/packages/core/agent/README.zh.md
++++ b/packages/core/agent/README.zh.md
+@@ -82,7 +82,7 @@ await handle.agent.whenIdle()
+ 
+ ### 步骤准入
+ 
+-`PreStepDecision` 要么是 `{ kind: 'reject' }`，要么是 `{ kind: 'enter', messages, startsRequestSeries? }`。enter 分支包含完整、带标识且冻结的消息批次。接纳不等于提交：组装与 `step/start` 之后，`agent/request` 和 `prepareCall()` 先解析路由，循环随后才提交系统提示词与用户批次。在任一异步阶段取消都不会提交这两者。`startsRequestSeries: true` 声明一个独立的模型消息序列；包装下游 enter 的监听器会保留该声明与批次，除非有意替换其中一项。领取会从 inbox 移除候选消息，领取后插入的消息则等待后续边界。
++`PreStepDecision` 要么是 `{ kind: 'reject' }`，要么是 `{ kind: 'enter', messages, startsRequestSeries?, assistantPrefill? }`。enter 分支包含完整、带标识且冻结的消息批次。接纳不等于提交：组装与 `step/start` 之后，`agent/request` 和 `prepareCall()` 先解析路由，循环随后才提交系统提示词与用户批次。在任一异步阶段取消都不会提交这两者。`startsRequestSeries: true` 声明一个独立的模型消息序列；包装下游 enter 的监听器会保留该声明与批次，除非有意替换其中一项。`assistantPrefill` 是仅用于请求的 assistant 续写文本，追加在派生历史之后并记录到 `request/header` 快照；它不会成为会话消息，因此转录、统计与压缩都不会包含它。领取会从 inbox 移除候选消息，领取后插入的消息则等待后续边界。
+ 
+ ### 持久 inbox
+ 
+diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
+index 2118507..04570b7 100644
+--- a/packages/core/agent/src/runtime-types.ts
++++ b/packages/core/agent/src/runtime-types.ts
+@@ -116,6 +116,13 @@ export type PreStepDecision =
+     messages: UserMessage[]
+     /** Start a distinct model-message series before this step's admitted messages. */
+     startsRequestSeries?: true
++    /**
++     * Request-only assistant continuation appended after the derived history on
++     * every attempt of this step. The loop records it on the `request/header`
++     * snapshot and never appends a session message, so the transcript, stats,
++     * and compaction omit it while reconstruction still reproduces the request.
++     */
++    assistantPrefill?: string
+   }
+ 
+ /** Action returned by a listener that owns model-request recovery. */
+diff --git a/packages/core/session/src/request-header.ts b/packages/core/session/src/request-header.ts
+index 326165a..79f7e1c 100644
+--- a/packages/core/session/src/request-header.ts
++++ b/packages/core/session/src/request-header.ts
+@@ -26,6 +26,7 @@ export function canonicalHeader(header: EpochHeader): EpochHeader {
+       ? { adapterDefaults }
+       : {},
+     ...header.tools !== undefined && header.tools.length > 0 ? { tools: header.tools } : {},
++    ...header.assistantPrefill === undefined ? {} : { assistantPrefill: header.assistantPrefill },
+   }
+ }
+ 
+@@ -38,13 +39,14 @@ function sameSchema(a: ToolSchema, b: ToolSchema): boolean {
+  * Field-wise equality over canonical headers. Tool schemas compare in order.
+  * @param a - one canonical header.
+  * @param b - the other.
+- * @returns whether config, adapter defaults, and tools all match.
++ * @returns whether config, adapter defaults, tools, and assistant prefill match.
+  */
+ export function headerEquals(a: EpochHeader, b: EpochHeader): boolean {
+   if (
+     !callConfigEquals(a.config, b.config)
+     || a.adapterDefaults?.reasoningEffort !== b.adapterDefaults?.reasoningEffort
+     || a.adapterDefaults?.maxTokens !== b.adapterDefaults?.maxTokens
++    || a.assistantPrefill !== b.assistantPrefill
+   ) return false
+   const at = a.tools ?? []
+   const bt = b.tools ?? []
+diff --git a/packages/core/session/src/types.ts b/packages/core/session/src/types.ts
+index e929ad3..3ea674e 100644
+--- a/packages/core/session/src/types.ts
++++ b/packages/core/session/src/types.ts
+@@ -244,6 +244,12 @@ export interface EpochHeader {
+   adapterDefaults?: LlmCallConfigAdapterDefaults
+   /** Assembled tool schemas; absent for a tool-less request. */
+   tools?: ToolSchema[]
++  /**
++   * Request-only assistant continuation appended after the derived history;
++   * absent when none. Never a session message, so the transcript, stats, and
++   * compaction omit it while header reconstruction reproduces the request.
++   */
++  assistantPrefill?: string
+   /** Retired request text; system prompts belong to system/message events.
+    * @persistenceReserved
+    */

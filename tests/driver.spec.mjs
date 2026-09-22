@@ -9,7 +9,9 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fallbackRetryable, gateToolCall, opencodeUsesPatch, persistPlanFile, systemPromptFor } from '../presets/opencode-omo/driver.mjs'
+import {
+  assistantPrefillSeamFor, fallbackRetryable, gateToolCall, opencodeUsesPatch, persistPlanFile, systemPromptFor, withAssistantPrefill,
+} from '../presets/opencode-omo/driver.mjs'
 import { renderRulesFor } from '../presets/opencode-omo/rules.mjs'
 
 function roleFace(role = 'sisyphus') {
@@ -210,7 +212,7 @@ test('unknown model families use the omo dynamic Sisyphus fallback prompt', () =
   }
 })
 
-test('maxSteps section appears in the system prompt at the ceiling on stock 0.1.2', () => {
+test('maxSteps section appears in the system prompt at the ceiling without the assistant-prefill seam', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-maxsteps-'))
   try {
     // step counting: nextPosition = last step/start + 1; three starts propose step 4.
@@ -231,6 +233,48 @@ test('maxSteps section appears in the system prompt at the ceiling on stock 0.1.
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
+})
+
+test('agent/pre-step decisions carry the request-only assistantPrefill at the ceiling', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-maxsteps-prefill-'))
+  try {
+    const events = [
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'step/start', data: { turn: 1, step: 1 } },
+      { type: 'step/start', data: { turn: 1, step: 2 } },
+      { type: 'step/start', data: { turn: 1, step: 3 } },
+    ]
+    const roles = { ...roleFace(), configFor: () => ({ maxSteps: 4, fallbackModels: [] }) }
+    const enter = { kind: 'enter', messages: [] }
+
+    // Above the cap the decision is untouched (same object, no field).
+    const below = withAssistantPrefill(roles, mockAgent(cwd, events.slice(0, 3)).session, enter)
+    assert.equal(below, enter)
+    assert.equal(below.assistantPrefill, undefined)
+
+    // At the cap the decision keeps acceptance state and gains the opencode text.
+    const atCeiling = withAssistantPrefill(roles, mockAgent(cwd, events).session, enter)
+    assert.equal(atCeiling.kind, 'enter')
+    assert.deepEqual(atCeiling.messages, [])
+    assert.match(atCeiling.assistantPrefill, /CRITICAL - MAXIMUM STEPS REACHED/)
+
+    // Reject decisions are never augmented.
+    const reject = { kind: 'reject' }
+    assert.equal(withAssistantPrefill(roles, mockAgent(cwd, events).session, reject), reject)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('the registry probe is authoritative for the assistant-prefill seam', () => {
+  // A checkout whose own node_modules holds an unpatched published loop must
+  // still follow the running harness: the host registry probes the dsh
+  // installation and answers first.
+  assert.equal(assistantPrefillSeamFor({ honorsAssistantPrefill: () => true }), true)
+  assert.equal(assistantPrefillSeamFor({ honorsAssistantPrefill: () => false }), false)
+  // A throwing probe (detached service) falls back to the local detection.
+  assert.equal(typeof assistantPrefillSeamFor({ honorsAssistantPrefill: () => { throw new Error('detached') } }), 'boolean')
+  assert.equal(typeof assistantPrefillSeamFor(undefined), 'boolean')
 })
 
 test('specialist roles render env plus the specialist body, not Sisyphus identity', () => {

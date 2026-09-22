@@ -8,30 +8,33 @@
  * - `settings.section`: the global "角色设置" page in the dsh settings panel,
  *   where each omo role's primary model and fallback models are configured.
  *
- * Role settings use the hybrid transport: `settingsScope` on loopback, and the
- * authenticated `/opencode-omo` connection RPC channel when the settings scope
- * is memory-mode (non-loopback browser). The session model catalog and
- * selection keep using the existing `remote.session` RPC.
+ * Role settings use the hybrid transport: `ctx.configForms.get(entryId)` — the
+ * Config-derived form over the plugin's own `opencode-omo-roles` profile entry
+ * — on loopback, and the authenticated `/opencode-omo` connection RPC channel
+ * when the form is memory-mode (non-loopback browser, where dsh deliberately
+ * keeps settings process-local). The session model catalog and selection keep
+ * using the existing `remote.session` RPC.
  */
 import type { Context } from '@deepseek-ai/cordis'
-// Type-only: resolves the slots service merge + standard slot kit.
-import type {} from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: pulls the renderer's `slots` service merge (0.1.7 replaced the
+// former dsh-client-runtime/client aggregate) plus the standard slot kit.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the composer SlotMap declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-// Type-only: pulls the settings.section SlotMap declaration.
+// Type-only: pulls the settings.section SlotMap declaration and the ctx.configForms service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
-import { RoleSelect } from './RoleSelect.tsx'
+import { RoleSelect, installTriggerStyles } from './RoleSelect.tsx'
 import type { RoleSelectInjected } from './RoleSelect.tsx'
 import { OmoSettingsSection } from './OmoSettingsSection.tsx'
 import type { OmoSettingsSectionProps } from './OmoSettingsSection.tsx'
 import { RoleSettingsSection } from './RoleSettings.tsx'
 import type { RoleSettingsInjected } from './RoleSettings.tsx'
-import { normalizeOmoSettingsSection, OMO_ROLE_SETTINGS_NAMESPACE } from '../core/omo-settings.ts'
+import { OMO_ROLE_SETTINGS_NAMESPACE } from '../core/omo-settings.ts'
 import type { OmoCatalogModel } from './omo-wire.ts'
-import type { OmoRpcCaller, OmoSettingsScope } from './omo-roles-store.ts'
+import type { OmoConfigForm, OmoRpcCaller } from './omo-roles-store.ts'
 import type {} from './slots.ts'
-export { RoleSelect } from './RoleSelect.tsx'
+export { RoleSelect, installTriggerStyles } from './RoleSelect.tsx'
 export type { RoleSelectInjected, RoleSelectProps } from './RoleSelect.tsx'
 export { OmoSettingsSection } from './OmoSettingsSection.tsx'
 export type { OmoSettingsSectionProps } from './OmoSettingsSection.tsx'
@@ -42,8 +45,8 @@ export { OMO_ROLE_SETTINGS_NAMESPACE } from '../core/omo-settings.ts'
 /** Cordis plugin name. */
 export const name = 'opencode-omo-client'
 
-/** Required services: slots + settings transport + connection RPC + the session remote. */
-export const inject = ['slots', 'settingsScope', 'connection', 'remote', 'remote.session']
+/** Required services: slots + the Config-derived settings forms + connection RPC + the session remote. */
+export const inject = ['slots', 'configForms', 'connection', 'remote', 'remote.session']
 
 /** RemoteResult face used by `ctx.remote.session` (no `.result` wrapper). */
 type RemoteResult<T> =
@@ -98,10 +101,10 @@ function catalogOf(
  */
 export function apply(ctx: Context): void {
   const session = ctx.get('remote.session') as SessionRemote
-  const scope = ctx.settingsScope.bind({
-    namespace: OMO_ROLE_SETTINGS_NAMESPACE,
-    decode: normalizeOmoSettingsSection,
-  }) as unknown as OmoSettingsScope
+  // The Config-derived form for this plugin's own profile entry (0.1.7). On a
+  // non-loopback page dsh resolves the form to memory mode, whose snapshot is
+  // `unavailable`; the store then uses the authenticated RPC channel below.
+  const form = ctx.configForms.get(OMO_ROLE_SETTINGS_NAMESPACE) as unknown as OmoConfigForm
   const connection = ctx.get('connection') as unknown as {
     rpc?: OmoRpcCaller
   } | undefined
@@ -119,6 +122,10 @@ export function apply(ctx: Context): void {
     return response.ok
   }
 
+  // The chip stylesheet belongs to the plugin, not to a component render:
+  // register it once here and let unload remove it.
+  ctx.effect(() => installTriggerStyles(), 'opencode-omo-client: role chip styles')
+
   ctx.effect(() => {
     // `slots.inject` waits for the declaring parent entry (ui-conversation /
     // ui-settings) instead of assuming a global apply order. Out-of-tree
@@ -131,12 +138,17 @@ export function apply(ctx: Context): void {
       label: () => 'opencode-omo',
       inject: (sessionId: SessionId): RoleSelectInjected => ({
         sessionId,
-        scope,
+        form,
         rpc,
         selectModel: selection => selectModel(selection, sessionId),
       }),
     }, RoleSelect))
 
+    // The settings page is registered unconditionally, not through
+    // `configForms.whileServed`: a non-loopback deployment keeps the form
+    // unavailable by design but must still show the page (the store's
+    // authenticated RPC transport serves it there), so gating on the served
+    // namespace would drop a documented entry point.
     const disposeSettings = ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',
       id: 'opencode-omo',
@@ -153,7 +165,7 @@ export function apply(ctx: Context): void {
       order: 0,
       label: () => '角色设置',
       inject: (): RoleSettingsInjected => ({
-        scope,
+        form,
         rpc,
         loadModels,
       }),

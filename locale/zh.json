@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "opencode-omo",
+    "description": "opencode + oh-my-openagent (omo) 行为模式：opencode 的工具链与完整系统提示、omo 多角色编排、输入框角色选择，以及按角色的模型/fallback 设置。"
+  }
+}

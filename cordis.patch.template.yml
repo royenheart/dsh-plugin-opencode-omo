@@ -1,0 +1,15 @@
+# Host-row half of the generated `cordis.patch.yml` (see
+# scripts/build-preset-patch.mjs). Edit this template or the preset composition
+# (`presets/opencode-omo/agent.cordis.yml`), never the generated file.
+#
+# The package's own host row: role registry service (`ctx.omoRoles`) and the
+# authenticated `/opencode-omo` browser RPC channel. The row id doubles as the
+# Config-form namespace for the durable role/fallback configuration
+# (`roles` + `sessions` volatile Config fields), so it is kept as
+# `opencode-omo-roles`: the harness imports a pre-0.1.7 `$DSH_HOME/settings.yaml`
+# section into the profile entry whose id matches the section id, and this
+# keeps that migration working. The bundle patch is the same layer that ships
+# the preset, so the driver always finds the registry it reads.
+- insert:
+    - id: opencode-omo-roles
+      name: '@royenheart/dsh-plugin-opencode-omo'

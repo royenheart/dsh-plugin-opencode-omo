@@ -21,7 +21,6 @@ import { createRequire } from 'node:module'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SkillRegistry } from '@deepseek-ai/dsh-skill'
 import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
-import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import { apply as applyHost, inject as hostInject, name as hostName } from '../lib/index.js'
 import { apply as applyCommentChecker } from '../presets/opencode-omo/comment-checker.mjs'
 
@@ -125,12 +124,18 @@ class StubFs extends Service {
   }
 }
 
-class MemorySettings extends SettingsProvider {
-  doc = {}
-  get writable() { return true }
-  load() { return Promise.resolve(structuredClone(this.doc)) }
-  persist(ns, section) {
-    this.doc[ns] = structuredClone(section)
+/** Mock 0.1.7 `settings` (Config-derived forms): record entry patches. */
+class MemorySettings extends Service {
+  constructor(ctx) {
+    super(ctx, 'settings')
+    this.entries = {}
+    this.live = { roles: {}, sessions: {} }
+  }
+  configure() { return () => {} }
+  update(ns, patch) {
+    this.entries[ns] = { ...(this.entries[ns] ?? {}), ...structuredClone(patch) }
+    if (patch.roles !== undefined) this.live.roles = this.entries[ns].roles
+    if (patch.sessions !== undefined) this.live.sessions = this.entries[ns].sessions
     return Promise.resolve()
   }
 }
@@ -225,7 +230,7 @@ function assertOmoDiverged(before, after) {
 
 test('host bundle patch inserts only the role-registry row, no tools', () => {
   const insert = hostInsert()
-  assert.match(insert, /id: opencode-omo/)
+  assert.match(insert, /id: opencode-omo-roles/)
   assert.match(insert, /name: '@royenheart\/dsh-plugin-opencode-omo'/)
   assert.equal([...insert.matchAll(/^\s+- id:/gm)].length, 1)
 })

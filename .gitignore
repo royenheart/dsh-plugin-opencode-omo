@@ -4,6 +4,9 @@ reference/
 # Build output (lib/ is generated locally by npm run build, not committed)
 lib/
 node_modules/
+# npm writes this lockfile during install; it is workspace state, not plugin
+# source, and a stale copy pins the previous harness corridor's peer tree.
+package-lock.json
 *.tsbuildinfo
 
 # Local state

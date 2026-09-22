@@ -145,7 +145,7 @@ test('loaded plugin survives in dsh web and exposes its components', async (t) =
   assert.equal(typeof exportsObj.RoleSettingsSection, 'function')
   const inject = exportsObj.inject
   assert.ok(Array.isArray(inject), 'client inject is an array')
-  assert.ok(inject.includes('settingsScope'), 'client inject includes settingsScope')
+  assert.ok(inject.includes('configForms'), 'client inject includes configForms')
   assert.ok(inject.includes('connection'), 'client inject includes connection')
 })
 

@@ -19,18 +19,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import {
-  IconChevronDownOutline14, IconCloseOutline16, IconPlusOutline16, Menu,
+  IconChevronDownOutlineRegular, IconCloseOutlineRegular, IconPlusOutlineMedium, Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { modelKey, parseModelKey } from './omo-wire.ts'
 import type { OmoCatalogModel, OmoRoleView, OmoRoleConfig } from './omo-wire.ts'
 import type { OmoModelSelection } from './omo-wire.ts'
 import { useOmoRoles } from './use-omo-roles.ts'
-import type { OmoRpcCaller, OmoSettingsScope } from './omo-roles-store.ts'
+import type { OmoConfigForm, OmoRpcCaller } from './omo-roles-store.ts'
 
 /** Injected face delivered by the settings-section outlet. */
 export interface RoleSettingsInjected {
-  readonly scope: OmoSettingsScope
+  readonly form: OmoConfigForm
   readonly rpc: OmoRpcCaller | undefined
   /** Session-independent dsh model catalog (llm.models). */
   readonly loadModels: () => Promise<readonly OmoCatalogModel[]>
@@ -208,9 +208,9 @@ function labelFor(models: readonly OmoCatalogModel[], selection: OmoModelSelecti
  * @returns the settings section content.
  */
 export function RoleSettingsSection({
-  scope, rpc, loadModels, close,
+  form, rpc, loadModels, close,
 }: RoleSettingsProps): ReactElement {
-  const { state, store } = useOmoRoles(scope, rpc, undefined)
+  const { state, store } = useOmoRoles(form, rpc, undefined)
   const [models, setModels] = useState<readonly OmoCatalogModel[]>([])
   const [modelError, setModelError] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
@@ -375,7 +375,7 @@ export function RoleSettingsSection({
           disabled={saving === role.id}
           onClick={() => { removeFallback(role, entry) }}
         >
-          <IconCloseOutline16 size={12} />
+          <IconCloseOutlineRegular size={12} />
         </button>
       </span>
     ))
@@ -416,7 +416,7 @@ export function RoleSettingsSection({
                   onClick={() => { setOpenMenu(openMenu === `${role.id}:model` ? null : `${role.id}:model`) }}
                 >
                   <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{modelLabel(role)}</span>
-                  <IconChevronDownOutline14 />
+                  <IconChevronDownOutlineRegular />
                 </button>
               )}
             />
@@ -445,7 +445,7 @@ export function RoleSettingsSection({
                 disabled={saving === role.id || models.length === 0}
                 onClick={() => { openFallback(role.id) }}
               >
-                <IconPlusOutline16 size={14} />
+                <IconPlusOutlineMedium size={14} />
               </button>
               <span style={STYLE.emptyFallback}>Fallback</span>
             </div>

@@ -19,8 +19,7 @@ echo "model:       deepseek-official/$DEEPSEEK_MODEL"
 
 # ---- dsh isolated home ------------------------------------------------------
 rm -rf "$DSH_HOME_BENCH"
-mkdir -p "$DSH_HOME_BENCH/profiles/$DSH_PROFILE/node_modules/@royenheart" \
-         "$DSH_HOME_BENCH/.agent-presets/opencode-omo"
+mkdir -p "$DSH_HOME_BENCH/profiles/$DSH_PROFILE/node_modules/@royenheart"
 
 # Every in-box bundle/dependency is materialized by dsh itself into
 # $DSH_HOME/profiles/node_modules on first boot (healProfilesModuleFallback).
@@ -29,11 +28,9 @@ mkdir -p "$DSH_HOME_BENCH/profiles/$DSH_PROFILE/node_modules/@royenheart" \
 mkdir -p "$DSH_HOME_BENCH/profiles/node_modules"
 ln -s "$PLUGIN_ROOT" "$DSH_HOME_BENCH/profiles/$DSH_PROFILE/node_modules/@royenheart/dsh-plugin-opencode-omo"
 
-# User preset root: real directory, symlinked entries (dsh discovery contract).
-for entry in "$PLUGIN_ROOT"/presets/opencode-omo/*; do
-  ln -s "$entry" "$DSH_HOME_BENCH/.agent-presets/opencode-omo/$(basename "$entry")"
-done
-
+# 0.1.7 presets are @deepseek-ai/dsh-agent-preset declaration rows carried by
+# the bundle patch below; the former $DSH_HOME/.agent-presets discovery root is
+# no longer read, so nothing is linked there.
 cat > "$DSH_HOME_BENCH/profiles/$DSH_PROFILE/package.json" <<JSON
 {
   "name": "dsh-profile-$DSH_PROFILE",
