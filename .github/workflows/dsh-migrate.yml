@@ -1,5 +1,5 @@
 # Calls the reusable workflow of royenheart/dsh-migrate-bot, pinned to its
-# release candidate v1.0.0-rc.1 (move to @v1 once 1.0.0 is released). The jobs
+# release candidate v1.0.0-rc.2 (move to @v1 once 1.0.0 is released). The jobs
 # live there; this file only chooses the triggers.
 # 0 13 * * 2 = 21:00 UTC+8 every Tuesday.
 
@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   dsh-migrate:
-    uses: royenheart/dsh-migrate-bot/.github/workflows/migrate.yml@v1.0.0-rc.1
+    uses: royenheart/dsh-migrate-bot/.github/workflows/migrate.yml@v1.0.0-rc.2
     with:
       target: ${{ inputs.dsh_release || '' }}
       force: ${{ inputs.migrate_again || false }}
