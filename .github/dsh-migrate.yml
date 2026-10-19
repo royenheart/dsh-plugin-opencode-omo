@@ -1,0 +1,14 @@
+# dsh-migrate configuration; every key is listed in
+# https://github.com/royenheart/dsh-migrate-bot/blob/v1.0.0-rc.1/docs/reference/configuration.md
+
+# After a proposal is merged, report to royenheart/dsh-migrate-bot what the
+# maintainer fixed by hand (needs the secret DSH_MIGRATE_REPORT_BOT_TOKEN).
+reports:
+  channels:
+    migrate-bot:
+      enabled: true
+
+# Run log stream and pull request previews.
+deploy:
+  enabled: true
+  endpoint: https://dsh-deploy.royenheart.com
