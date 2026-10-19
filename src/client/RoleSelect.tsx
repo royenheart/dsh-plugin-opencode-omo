@@ -15,21 +15,20 @@ import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
-  IconAgentPresetOutline16, IconChevronDownOutline14, Menu,
+  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { sessionAgentPreset } from './omo-wire.ts'
 import type { OmoModelSelection } from './omo-wire.ts'
 import { useOmoRoles } from './use-omo-roles.ts'
-import type { OmoRpcCaller, OmoSettingsScope } from './omo-roles-store.ts'
+import type { OmoConfigForm } from './omo-roles-store.ts'
 
 /** Injected face delivered by the composer-bar outlet. */
 export interface RoleSelectInjected {
   readonly sessionId: SessionId
-  readonly scope: OmoSettingsScope
-  readonly rpc: OmoRpcCaller | undefined
+  readonly form: OmoConfigForm
   readonly selectModel: (selection: OmoModelSelection) => Promise<boolean>
 }
 
@@ -118,14 +117,14 @@ function installTriggerStyles(): void {
  * @returns the picker element.
  */
 export function RoleSelect({
-  sessionId, useSessions, locked = false, scope, rpc, selectModel,
+  sessionId, useSessions, locked = false, form, selectModel,
 }: RoleSelectProps): ReactElement | null {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
-  const { state, store } = useOmoRoles(scope, rpc, sessionId)
+  const { state, store } = useOmoRoles(form, sessionId)
 
-  const summary = useSessions?.(state => (sessionId === undefined ? undefined : state.byId[sessionId]))
+  const summary = useSessions?.((state: SessionListState) => (sessionId === undefined ? undefined : state.byId[sessionId]))
   const eligible = sessionAgentPreset(summary) === OMO_PRESET
 
   useEffect(() => { installTriggerStyles() }, [])
@@ -135,7 +134,7 @@ export function RoleSelect({
     setOpen(false)
   }, [locked, open])
 
-  if (!eligible || sessionId === undefined || scope === undefined) return null
+  if (!eligible || sessionId === undefined || form === undefined) return null
 
   const roles = state.roles.filter(role => role.mode !== 'subagent')
   const currentRole = state.currentRole
@@ -184,11 +183,11 @@ export function RoleSelect({
           onClick={() => { setOpen(!open) }}
         >
           <span className="omo-role-select-trigger-icon" aria-hidden>
-            <IconAgentPresetOutline16 />
+            <IconAgentPresetOutlineRegular />
           </span>
           <span className="omo-role-select-trigger-label">{label}</span>
           <span className={`omo-role-select-chevron${open ? ' omo-role-select-chevron-open' : ''}`} aria-hidden>
-            <IconChevronDownOutline14 />
+            <IconChevronDownOutlineRegular />
           </span>
         </button>
       )}

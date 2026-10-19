@@ -1,4 +1,4 @@
-# opencode-omo loop behavior on native dsh seams (no driver seam, no local prefill patch)
+# opencode-omo loop behavior on native dsh seams (no driver seam; one request-tail patch)
 
 ## Objective
 
@@ -19,7 +19,7 @@ seam:
 | Suppress harness identity + runtime snapshot | `complete: true` + `ctx.systemPrompt.suppressRuntimeContext()` |
 | opencode per-model tool gating (apply_patch vs edit/write) | `system-prompt/assemble` waterfall mutates `assembly.tools` |
 | Ultrawork keyword detection before assembly | `agent/inbox/claimed` (fires inside `preStep` before `systemPrompt.assemble`) |
-| maxSteps + verbatim MAX_STEPS_PROMPT | system-prompt section on stock 0.1.2 (the only supported path) |
+| maxSteps + verbatim MAX_STEPS_PROMPT | patched request-only assistant tail; system-prompt section on a stock host |
 | Role primary model + ultrawork override | `agent/request` waterfall |
 | Fallback chain before harness retry policy | `agent/request-error` waterfall returning `{ kind: 'retry' }` |
 
@@ -30,23 +30,24 @@ probe tests against the dsh test harness: complete persona replacement, gpt
 tool gating, role route, request-error fallback, max-steps injection, and
 ultrawork routing all fire with a plain `ReactLoopAgent`.
 
-## Current fidelity posture (dsh 0.1.2-alpha.2)
+## Current fidelity posture (dsh 0.2.1-rc.2)
 
 1. `PreStepDecision.assistantPrefill` is still absent upstream. This plugin
-   **no longer ships** a local patch for it and no longer detects a leftover
-   seam. `MAX_STEPS_PROMPT` is a system-prompt section on the ceiling step
-   (same text and trigger as opencode; different role). Upstream:
-   https://github.com/deepseek-ai/deepseek-harness/discussions/2407
+   ships `patches/0001-agent-pre-step-assistant-prefill.patch`, which adds a
+   request-only assistant tail, logs it on `request/header`, and prices it in
+   token pressure. On a patched host the ceiling step uses that path; on a stock
+   host the plugin keeps the same text and trigger as a system-prompt section.
+   Upstream: https://github.com/deepseek-ai/deepseek-harness/discussions/2407
 
-   Behavioral gaps vs opencode: assistant vs system role, token placement, and
-   reconstructable-requests (live assembly vs `request/header`).
-   Transcript/stats/compaction still omit the ceiling text. Nothing is
-   silently dropped.
+   The stock fallback differs in role (assistant vs system), token placement,
+   and request reconstruction (header vs live assembly). Transcript, stats, and
+   compaction still omit the ceiling text on both paths.
 
-2. The complete persona text provider has no turn/step argument. The step about
-   to run is inferred from the durable log (`turn/start` + last `step/start`),
-   and ultrawork is detected one event earlier via `agent/inbox/claimed`, so
-   the env block sees the correct route for the step.
+2. The complete persona text provider has no turn/step argument, and 0.2.1's
+   `AssembleContext` no longer carries an Agent. The assembly reads the exact
+   initiator through `ctx.agents.currentInitiator()`; the step about to run is
+   inferred from `session.snapshotEvents()` (`turn/start` + last `step/start`),
+   and ultrawork is detected one event earlier via `agent/inbox/claimed`.
 3. The env block is computed once per step. On an in-step fallback retry it
    keeps the primary route's model id instead of re-rendering for the fallback
    model (openCode re-renders per attempt). The request itself still routes to
@@ -67,14 +68,17 @@ and keep shipped updates live.
 
 ## dsh-side footprint after the re-scan
 
-None in this repository.
+One general-purpose patch: `patches/0001-agent-pre-step-assistant-prefill.patch`
+adds a request-only assistant tail. It is a loop capability, not a
+plugin-specific branch.
 
-- The preset-root merge, the entire `dsh-agent-driver` + `agent-loop` subclass
-  seam, and the `conversation.input.role` composer seat were all dropped in
-  favor of the official `$DSH_HOME/.agent-presets` user root, the native
-  prompt/event waterfalls, and the existing `conversation.input.left` list slot.
-- The previous `assistantPrefill` patch is deleted. Stock 0.1.2 uses a
-  system-prompt section. Discussion #2407 remains the upstream ask.
+- The preset-root merge and the entire `dsh-agent-driver` + `agent-loop` subclass
+  seam were dropped in favor of the official `@deepseek-ai/dsh-agent-preset`
+  declaration, the native prompt/event waterfalls, and the existing
+  `conversation.input.left` list slot.
+- `MAX_STEPS_PROMPT` uses the patched request tail when available and the
+  documented system-prompt fallback otherwise. Discussion #2407 is the upstream
+  ask for the same seam.
 
-Everything else runs on an unmodified 0.1.2-alpha.2 checkout.
+Everything else runs on an unmodified 0.2.1-rc.2 checkout.
 

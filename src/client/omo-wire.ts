@@ -62,9 +62,10 @@ export interface SessionPresetSummary {
 }
 
 /**
- * Read the session's agent-preset id. dsh 0.1.2 keeps it on
- * `projectionValues.agentPreset`; older list rows put it on the summary
- * itself. Empty / non-string values do not count.
+ * Read the session's agent-preset id. 0.2.1 keeps it on
+ * `projectionValues.agentPreset`; list rows without the projection surface
+ * may still carry it on the summary itself. Empty / non-string values do not
+ * count.
  */
 export function sessionAgentPreset(summary: SessionPresetSummary | undefined): string | undefined {
   const projected = summary?.projectionValues?.agentPreset

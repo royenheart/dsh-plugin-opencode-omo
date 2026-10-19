@@ -120,7 +120,7 @@ function mockDelegationCtx(jobs) {
 test('background_output rejects ses_ ids and rewrites collected job ids', async () => {
   const ctx = mockDelegationCtx({
     read(id) {
-      return { text: `out-${id}`, snapshot: { id, status: 'completed' } }
+      return { chunks: [{ at: 0, text: `out-${id}` }], job: { id, status: 'completed' } }
     },
   })
   apply(ctx)

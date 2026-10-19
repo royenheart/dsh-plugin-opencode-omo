@@ -13,7 +13,7 @@
 # listeners apply opencode tool gating, maxSteps, ultrawork, and role model
 # fallback — no dsh-side driver seam required.
 - id: opencode-omo-loop
-  name: ./driver.mjs
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/driver.mjs'
 
 # AGENTS.md / CLAUDE.md walk-up injection, mirroring opencode's instruction loading.
 - id: agent-instructions
@@ -29,55 +29,25 @@
 # ── comment-checker hook ────────────────────────────────────────────────────
 # omo's comment-checker: reject AI-slop comments on write/edit before execution.
 - id: opencode-omo-comment-checker
-  name: ./comment-checker.mjs
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/comment-checker.mjs'
 
 # opencode external_directory + doom_loop permission rules (tools/pre-execute).
 - id: opencode-omo-permission-rules
-  name: ./permission-rules.mjs
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/permission-rules.mjs'
 
 # bash sandbox-escalation shim: the stock persistent bash carries none of
 # tool-bash's sandbox_permissions/approval contract, so under workspace-write
 # an out-of-workspace write dead-ends at EROFS. This per-agent shim adds the
 # contract back using only public dsh services (see the module header).
 - id: opencode-omo-escalating-bash
-  name: ./escalating-bash.mjs
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/escalating-bash.mjs'
 
 # ── lsp ─────────────────────────────────────────────────────────────────────
 # omo's LSP surface (named lsp_* tools over dsh's single `lsp` / ctx.lsp.query).
-# Scoped to this preset via an isolate realm; a TypeScript/JS server is preconfigured.
-- id: lsp
-  name: cordis:group
-  group: true
-  isolate:
-    lsp: true
-  config:
-    - id: lsp-service
-      name: '@deepseek-ai/dsh-lsp'
-
-    - id: lsp-stdio
-      name: '@deepseek-ai/dsh-lsp-stdio'
-      # Graceful degradation: without the server binary this row disables itself
-      # (lsp-service + tool-lsp stay mounted), so the whole preset still loads.
-      disabled: !!js '!(function () { try { const { spawnSync } = process.getBuiltinModule("node:child_process"); return spawnSync("typescript-language-server", ["--version"], { stdio: "ignore", timeout: 5000 }).error === undefined } catch { return false } })()'
-      config:
-        servers:
-          typescript:
-            command: typescript-language-server
-            args:
-              - --stdio
-            extensionToLanguage:
-              .ts: typescript
-              .tsx: typescriptreact
-              .js: javascript
-              .jsx: javascriptreact
-
-    - id: tool-lsp
-      name: '@deepseek-ai/dsh-tool-lsp'
-
-    # Hide dsh `lsp`; expose omo names. Navigation maps to ctx.lsp.query;
-    # diagnostics / rename / symbols return a harness fallback (dsh omitted them).
-    - id: opencode-omo-lsp-surface
-      name: ./lsp-surface.mjs
+# The optional module self-disables when the LSP packages or the TypeScript
+# server are absent, so an npm-only install still mounts this preset.
+- id: opencode-omo-lsp
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/lsp-optional.mjs'
 
 # ── shell ───────────────────────────────────────────────────────────────────
 # opencode's shell is persistent; dsh's fresh `tool-bash` is replaced with the
@@ -136,13 +106,13 @@
     # apply_patch and hashline live in this realm so they use the same local fs
     # as read/write/edit (full access, matching opencode's execution backend).
     - id: opencode-omo-apply-patch
-      name: ./apply-patch.mjs
+      name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/apply-patch.mjs'
 
     - id: opencode-omo-tool-surface
-      name: ./tool-surface.mjs
+      name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/tool-surface.mjs'
 
     - id: opencode-omo-hashline
-      name: ./hashline.mjs
+      name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/hashline.mjs'
 
 # ── background jobs ────────────────────────────────────────────────────────
 - id: tool-jobs
@@ -152,12 +122,12 @@
 # over the dsh jobs + subagent execution layer. Hides job_* / subagent from
 # the assembled catalog the same way tool-surface hides dsh web_search.queries.
 - id: opencode-omo-delegation-surface
-  name: ./delegation-surface.mjs
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/delegation-surface.mjs'
 
 # dsh stand-in for omo's Codex Stop continuation: steer while Boulder work
 # for this session still has unchecked plan checkboxes.
 - id: opencode-omo-start-work-continuation
-  name: ./start-work-continuation.mjs
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/start-work-continuation.mjs'
 
 # ── skills ──────────────────────────────────────────────────────────────────
 # omo ships its skills beside the plugin. `omo-skills.mjs` registers them as
@@ -167,7 +137,7 @@
 # any change to that plugin. The native filesystem provider keeps its default
 # project/user roots.
 - id: omo-skills
-  name: ./omo-skills.mjs
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/omo-skills.mjs'
 
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
@@ -178,7 +148,7 @@
 # ── omo builtin commands ─────────────────────────────────────────────────────
 # Native dsh command registrations for the omo slash-command surface.
 - id: opencode-omo-commands
-  name: ./omo-commands.mjs
+  name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/omo-commands.mjs'
 
 # ── goals ───────────────────────────────────────────────────────────────────
 # omo's goal feature (create_goal / get_goal / update_goal) maps here.
@@ -252,14 +222,12 @@
       config:
         provider: spawn
         toolName: subagent
-        backgroundMode: continuable
 
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: fork
         toolName: subagent_fork
-        backgroundMode: continuable
 
     # Prometheus planner. `plan` must be a registered global toolName: every
     # named-row deny list includes it, and dsh `tools.restrict()` throws on
@@ -269,250 +237,53 @@
       config:
         provider: spawn
         toolName: plan
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - sisyphus
-            - hephaestus
-            - atlas
-            - sisyphus-junior
-            - workflow
-            - ralph
-
     # omo's read-only specialist subagents.
     - id: role-oracle
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: oracle
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - write
-            - edit
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - workflow
-            - ralph
-
     - id: role-librarian
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: librarian
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - write
-            - edit
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - workflow
-            - ralph
-
     - id: role-explore
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: explore
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - write
-            - edit
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - workflow
-            - ralph
-
     - id: role-metis
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: metis
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - write
-            - edit
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - workflow
-            - ralph
-
     - id: role-momus
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: momus
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - write
-            - edit
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - workflow
-            - ralph
-
     - id: role-looker
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: multimodal-looker
-        enableRunInBackground: false
-        toolFilter:
-          allow:
-            - read
-            - read_image
-
     # Council reviewers (composer athena / athena-junior / council-member).
     - id: role-athena
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: athena
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - write
-            - edit
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - workflow
-            - ralph
-
     - id: role-athena-junior
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: athena-junior
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - write
-            - edit
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - workflow
-            - ralph
-
     - id: role-council-member
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: council-member
-        enableRunInBackground: false
-        toolFilter:
-          deny:
-            - write
-            - edit
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - workflow
-            - ralph
-
     # omo's primary agents are also delegatable named subagents in the
     # reference roster. These reuse the same complete role prompts as the
     # composer selector; recursion into subagent/workflow tools is denied so a
@@ -522,121 +293,28 @@
       config:
         provider: spawn
         toolName: sisyphus
-        toolFilter:
-          deny:
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - sisyphus
-            - hephaestus
-            - atlas
-            - sisyphus-junior
-            - workflow
-            - ralph
-
     - id: role-hephaestus
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: hephaestus
-        toolFilter:
-          deny:
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - sisyphus
-            - hephaestus
-            - atlas
-            - sisyphus-junior
-            - workflow
-            - ralph
-
     - id: role-atlas
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: atlas
-        toolFilter:
-          deny:
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - sisyphus
-            - hephaestus
-            - atlas
-            - sisyphus-junior
-            - workflow
-            - ralph
-
     - id: role-sisyphus-junior
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: spawn
         toolName: sisyphus-junior
-        toolFilter:
-          deny:
-            - task
-            - call_omo_agent
-            - subagent
-            - subagent_fork
-            - plan
-            - oracle
-            - librarian
-            - explore
-            - metis
-            - momus
-            - multimodal-looker
-            - athena
-            - athena-junior
-            - council-member
-            - sisyphus
-            - hephaestus
-            - atlas
-            - sisyphus-junior
-            - workflow
-            - ralph
-
     - id: opencode-omo-task-shim
-      name: ./task-shim.mjs
+      name: '@royenheart/dsh-plugin-opencode-omo/presets/opencode-omo/task-shim.mjs'
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
-
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
 

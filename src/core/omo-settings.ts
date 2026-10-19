@@ -1,9 +1,9 @@
 /**
- * Pure normalization for the `opencode-omo-roles` settings section.
+ * Pure normalization for the `opencode-omo` settings section.
  *
- * The settings namespace stores two maps:
+ * The host row stores two maps:
  *
- *   opencode-omo-roles:
+ *   opencode-omo:
  *     roles:    { <role>: { model?, fallbackModels, maxSteps?, ultrawork? } }
  *     sessions: { <sessionId>: <role> }
  *
@@ -15,8 +15,8 @@
 
 import { isOmoRole, type OmoModelSelection, type OmoRoleConfig, type OmoUltraworkOverride, type StoredOmoRoleConfig } from './omo-roles.ts'
 
-/** Settings namespace id registered with `ctx.settings` / bound on the client. */
-export const OMO_ROLE_SETTINGS_NAMESPACE = 'opencode-omo-roles'
+/** Host row / settings namespace id addressed by the official settings Remote. */
+export const OMO_ROLE_SETTINGS_NAMESPACE = 'opencode-omo'
 
 /** Runtime settings-section shape consumed by the client. */
 export interface OmoSettingsSection {

@@ -3,7 +3,7 @@
  * HTTP surface and the preset's native-seam loop shim.
  *
  * It owns three planes:
- * - durable settings (`opencode-omo-roles` namespace): per-role model/fallback
+ * - durable settings (`opencode-omo` row fields): per-role model/fallback
  *   configuration plus the last selected role per session, persisted through
  *   the dsh settings provider;
  * - process-local session overrides: the role picked in the composer applies
@@ -15,7 +15,8 @@
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-llm'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
+import type { Config } from './index.ts'
 import {
   OMO_DEFAULT_ROLE, OMO_ROLES, OMO_ROLE_FALLBACK_MODELS, OMO_ROLE_FALLBACK_PROVIDERS, emptyRoleConfig, isOmoRole, normalizeOmoRole,
 } from './core/omo-roles.ts'
@@ -76,8 +77,8 @@ declare module '@deepseek-ai/cordis' {
 
 /** Service plugin config handed to the constructor by the owning apply(). */
 export interface OmoRoleRegistryConfig {
-  /** The settings namespace owner scope registered by the host plugin. */
-  readonly settings: SettingsScope<OmoRoleSettings>
+  /** The host row's live volatile fields (`roles` / `sessions`). */
+  readonly config: Config
 }
 
 function normalizeModel(model: OmoModelSelection): OmoModelSelection {
@@ -137,9 +138,10 @@ export function normalizeRoleConfig(config: OmoRoleConfig): StoredOmoRoleConfig 
  * standing scope's `ctx.get('omoRoles')`.
  */
 export class OmoRoleRegistry extends Service {
-  static inject = ['llm']
+  static inject = ['llm', 'settings']
 
-  private readonly settings: SettingsScope<OmoRoleSettings>
+  private readonly config: Config
+  private readonly settings: Context['settings']
   private readonly llm: LlmFace
   private readonly sessionOverrides = new Map<string, string>()
   private readonly defaultFallbacks = new Map<string, OmoModelSelection[]>()
@@ -147,9 +149,8 @@ export class OmoRoleRegistry extends Service {
 
   constructor(ctx: Context, config: OmoRoleRegistryConfig) {
     super(ctx, 'omoRoles')
-    // The schema output type is structurally equivalent; cast keeps the
-    // registry face named rather than leaking schemastery's Dict type.
-    this.settings = config.settings as unknown as SettingsScope<OmoRoleSettings>
+    this.config = config.config
+    this.settings = ctx.settings
     this.llm = ctx.get('llm') as LlmFace
     this.ctx.effect(() => {
       const off = this.ctx.on('llm/adapters-updated', () => { void this.refreshDefaultFallbacks() })
@@ -165,7 +166,7 @@ export class OmoRoleRegistry extends Service {
   roleFor(sessionId: string): string {
     const override = this.sessionOverrides.get(sessionId)
     if (override !== undefined) return override
-    const stored = this.settings.get().sessions[sessionId]
+    const stored = this.config.sessions.get()[sessionId]
     return normalizeOmoRole(stored)
   }
 
@@ -174,8 +175,8 @@ export class OmoRoleRegistry extends Service {
     const previous = this.sessionOverrides.get(sessionId)
     this.sessionOverrides.set(sessionId, role)
     try {
-      await this.settings.update({
-        sessions: { ...this.settings.get().sessions, [sessionId]: role },
+      await this.settings.update('opencode-omo', {
+        sessions: { ...this.config.sessions.get(), [sessionId]: role },
       })
     } catch (error) {
       if (previous === undefined) this.sessionOverrides.delete(sessionId)
@@ -187,15 +188,15 @@ export class OmoRoleRegistry extends Service {
   pinRole(sessionId: string, role: string): void {
     if (!isOmoRole(role)) throw new TypeError(`unknown omo role "${role}"`)
     this.sessionOverrides.set(sessionId, role)
-    void this.settings.update({
-      sessions: { ...this.settings.get().sessions, [sessionId]: role },
+    void this.settings.update('opencode-omo', {
+      sessions: { ...this.config.sessions.get(), [sessionId]: role },
     }).catch(() => {
       // The override already applies for this process.
     })
   }
 
   configFor(role: string): OmoRoleConfig {
-    const stored = this.settings.get().roles[normalizeOmoRole(role)]
+    const stored = this.config.roles.get()[normalizeOmoRole(role)]
     if (stored === undefined) return emptyRoleConfig()
     return {
       ...(stored.model === null || stored.model === undefined ? {} : { model: stored.model }),
@@ -208,15 +209,15 @@ export class OmoRoleRegistry extends Service {
   async setRoleConfig(role: string, config: OmoRoleConfig): Promise<void> {
     if (!isOmoRole(role)) throw new TypeError(`unknown omo role "${role}"`)
     const normalized = normalizeRoleConfig(config)
-    await this.settings.update({
-      roles: { ...this.settings.get().roles, [role]: normalized },
+    await this.settings.update('opencode-omo', {
+      roles: { ...this.config.roles.get(), [role]: normalized },
     })
   }
 
   configs(): Record<string, OmoRoleConfig> {
-    const settings = this.settings.get()
+    const roles = this.config.roles.get()
     return Object.fromEntries(OMO_ROLES.map(role => {
-      const stored = settings.roles[role.id]
+      const stored = roles[role.id]
       return [role.id, stored === undefined
         ? emptyRoleConfig()
         : {
@@ -230,7 +231,7 @@ export class OmoRoleRegistry extends Service {
 
   primaryModelFor(role: string): OmoModelSelection | undefined {
     const id = normalizeOmoRole(role)
-    const stored = this.settings.get().roles[id]
+    const stored = this.config.roles.get()[id]
     // `model: null` is the explicit "follow session model" choice.
     if (stored?.model === null) return undefined
     if (stored?.model !== undefined) return { ...stored.model }

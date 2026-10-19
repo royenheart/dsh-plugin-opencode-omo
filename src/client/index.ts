@@ -8,18 +8,21 @@
  * - `settings.section`: the global "角色设置" page in the dsh settings panel,
  *   where each omo role's primary model and fallback models are configured.
  *
- * Role settings use the hybrid transport: `settingsScope` on loopback, and the
- * authenticated `/opencode-omo` connection RPC channel when the settings scope
- * is memory-mode (non-loopback browser). The session model catalog and
- * selection keep using the existing `remote.session` RPC.
+ * Role/session state is the host row's volatile config, read and written
+ * through the official settings form (`ctx.configForms.get('opencode-omo')`).
+ * The session model catalog and selection keep using the official
+ * `remote.session` RPC.
  */
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: resolves the slots service merge + standard slot kit.
-import type {} from '@deepseek-ai/dsh-client-runtime/client'
+import type {} from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: the `ctx.slots` service declaration.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the composer SlotMap declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the settings.section SlotMap declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import { RoleSelect } from './RoleSelect.tsx'
 import type { RoleSelectInjected } from './RoleSelect.tsx'
@@ -27,9 +30,10 @@ import { OmoSettingsSection } from './OmoSettingsSection.tsx'
 import type { OmoSettingsSectionProps } from './OmoSettingsSection.tsx'
 import { RoleSettingsSection } from './RoleSettings.tsx'
 import type { RoleSettingsInjected } from './RoleSettings.tsx'
-import { normalizeOmoSettingsSection, OMO_ROLE_SETTINGS_NAMESPACE } from '../core/omo-settings.ts'
+import type { OmoSettingsSection as OmoSection } from '../core/omo-settings.ts'
+import { OMO_ROLE_SETTINGS_NAMESPACE } from '../core/omo-settings.ts'
 import type { OmoCatalogModel } from './omo-wire.ts'
-import type { OmoRpcCaller, OmoSettingsScope } from './omo-roles-store.ts'
+import type { OmoConfigForm } from './omo-roles-store.ts'
 import type {} from './slots.ts'
 export { RoleSelect } from './RoleSelect.tsx'
 export type { RoleSelectInjected, RoleSelectProps } from './RoleSelect.tsx'
@@ -42,8 +46,8 @@ export { OMO_ROLE_SETTINGS_NAMESPACE } from '../core/omo-settings.ts'
 /** Cordis plugin name. */
 export const name = 'opencode-omo-client'
 
-/** Required services: slots + settings transport + connection RPC + the session remote. */
-export const inject = ['slots', 'settingsScope', 'connection', 'remote', 'remote.session']
+/** Required services: slots + the official settings form + model catalog/selection. */
+export const inject = ['slots', 'configForms', 'remote', 'remote.session']
 
 /** RemoteResult face used by `ctx.remote.session` (no `.result` wrapper). */
 type RemoteResult<T> =
@@ -69,6 +73,7 @@ type SessionRemote = {
     sessionId: SessionId
     provider: string
     model: string
+    reasoningEffort?: string
   }): Promise<RemoteResult<unknown>>
 }
 
@@ -98,23 +103,17 @@ function catalogOf(
  */
 export function apply(ctx: Context): void {
   const session = ctx.get('remote.session') as SessionRemote
-  const scope = ctx.settingsScope.bind({
-    namespace: OMO_ROLE_SETTINGS_NAMESPACE,
-    decode: normalizeOmoSettingsSection,
-  }) as unknown as OmoSettingsScope
-  const connection = ctx.get('connection') as unknown as {
-    rpc?: OmoRpcCaller
-  } | undefined
-  const rpc = connection?.rpc
+  const form = ctx.configForms.get<OmoSection>(OMO_ROLE_SETTINGS_NAMESPACE) as unknown as OmoConfigForm & ConfigForm<OmoSection>
 
   const loadModels = async (): Promise<readonly OmoCatalogModel[]> =>
     catalogOf(await session.modelCatalog())
 
-  const selectModel = async (selection: { provider: string; model: string }, sessionId: SessionId): Promise<boolean> => {
+  const selectModel = async (selection: { provider: string; model: string; reasoningEffort?: string }, sessionId: SessionId): Promise<boolean> => {
     const response = await session.selectModel({
       sessionId,
       provider: selection.provider,
       model: selection.model,
+      ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
     })
     return response.ok
   }
@@ -131,8 +130,7 @@ export function apply(ctx: Context): void {
       label: () => 'opencode-omo',
       inject: (sessionId: SessionId): RoleSelectInjected => ({
         sessionId,
-        scope,
-        rpc,
+        form,
         selectModel: selection => selectModel(selection, sessionId),
       }),
     }, RoleSelect))
@@ -153,8 +151,7 @@ export function apply(ctx: Context): void {
       order: 0,
       label: () => '角色设置',
       inject: (): RoleSettingsInjected => ({
-        scope,
-        rpc,
+        form,
         loadModels,
       }),
     }, RoleSettingsSection))

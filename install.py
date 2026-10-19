@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """Install/uninstall the @royenheart/dsh-plugin-opencode-omo plugin into a dsh profile.
 
-The plugin is a dsh BUNDLE whose patch inserts its host row (role registry +
-settings + browser routes). The `opencode-omo` AGENT PRESET is published
-through dsh's native user preset root (`$DSH_HOME/.agent-presets`), which the
-agent-presets service always scans, so no dsh-side preset-root patch is needed.
+The plugin is a dsh BUNDLE whose patch declares its host row (role registry +
+volatile settings entry) and the official `@deepseek-ai/dsh-agent-preset` row
+for `opencode-omo`. No user-preset-root copy is published: the bundle
+declaration is the single roster entry on 0.2.1.
 
 Installing it requires:
 
 1. a symlink of the package into the profile node_modules,
-2. adding it to the profile dsh.profile.bundles list (plus a link: dependency),
-   and
-3. a symlink `$DSH_HOME/.agent-presets/opencode-omo` to the package's preset.
+2. adding it to the profile dsh.profile.bundles list (plus a link: dependency).
 
 Usage:
     python3 install.py install [--profile web] [--home ~/.dsh]
@@ -107,37 +105,6 @@ def user_preset_dir(home: str) -> Path:
     return Path(home).expanduser() / ".agent-presets"
 
 
-def ensure_user_preset_link(root: Path, home: str) -> None:
-    """Publish the shipped preset through dsh's user preset root.
-
-    `dsh-agent-presets` resolves `$DSH_HOME/.agent-presets` after every
-    configured root (includeUserRoot defaults to true). Discovery only accepts
-    REAL directories as roster rows (`dirent.isDirectory()` does not follow
-    symlinks), so the preset id is a real directory whose entries are symlinked
-    into the package. Updates to shipped preset files therefore stay live
-    without reinstalling.
-    """
-    source = root / "presets" / "opencode-omo"
-    preset = user_preset_dir(home) / "opencode-omo"
-    if preset.is_symlink():
-        preset.unlink()
-    preset.mkdir(parents=True, exist_ok=True)
-    if preset.exists() and not preset.is_dir():
-        raise SystemExit("refusing to overwrite non-directory path: " + str(preset))
-    for existing in preset.iterdir():
-        if not existing.is_symlink():
-            continue
-        try:
-            target = Path(os.readlink(existing)).resolve()
-        except OSError:
-            existing.unlink()
-            continue
-        if target != source.resolve() and source.resolve() not in target.parents:
-            existing.unlink()
-    for entry in sorted(source.iterdir()):
-        ensure_link(preset / entry.name, entry)
-
-
 def ensure_built(root: Path) -> None:
     """Build the repository's own host/client bundles before installing.
 
@@ -191,17 +158,22 @@ def ensure_preset_runtime_links(root: Path, home: str) -> None:
         ensure_link(root / "node_modules" / "js-yaml", Path(os.readlink(js_yaml)).resolve())
 
 
-def ensure_lsp_links(home: str) -> None:
+def ensure_lsp_links(home: str, package_root: Path) -> None:
     """The preset mounts the native dsh LSP seam (`dsh-lsp`, `dsh-lsp-stdio`,
-    `dsh-tool-lsp`), which is not part of the base bundle; link the packages
-    into the shared profile module tree."""
+    `dsh-tool-lsp`), which is not part of the base bundle. Link the packages
+    into the shared profile tree and into the symlinked package's own
+    node_modules, because Node resolves the package's real path."""
     root = dsh_install_root(home)
     scope = shared_node_modules(home) / "@deepseek-ai"
+    local = package_root / "node_modules" / "@deepseek-ai"
     for name in ("dsh-lsp", "dsh-lsp-stdio", "dsh-tool-lsp"):
         target = root / "packages" / "lsp" / ("lsp" if name == "dsh-lsp" else name.removeprefix("dsh-"))
         if not target.exists():
-            raise SystemExit("required dsh lsp package missing: " + str(target))
+            print("WARNING: optional dsh LSP package missing from the dsh install; "
+                  "opencode-omo will run without LSP:", target)
+            continue
         ensure_link(scope / name, target)
+        ensure_link(local / name, target)
 
 
 def check_lsp_servers() -> None:
@@ -234,9 +206,8 @@ def install(args: argparse.Namespace) -> None:
     root = repo_root()
     ensure_built(root)
     ensure_preset_runtime_links(root, args.home)
-    ensure_lsp_links(args.home)
+    ensure_lsp_links(args.home, root)
     check_lsp_servers()
-    ensure_user_preset_link(root, args.home)
 
     # 1. Symlink the package into the profile node_modules (idempotent).
     target = root

@@ -1,60 +1,25 @@
 /**
- * Host-side smoke tests for the opencode-omo role registry + authenticated RPC
- * surface. Uses a bare in-memory settings provider and mock webServer /
- * connection services, so no dsh profile is required.
+ * Host-side smoke tests for the opencode-omo role registry.
+ *
+ * The 0.2.1 host row owns `roles` / `sessions` as volatile config fields; the
+ * browser edits them through the official settings form. These tests exercise
+ * the registry against an in-memory settings service + live-looking refs, so no
+ * dsh profile is required.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { Service } from '@deepseek-ai/cordis'
-import { SettingsProvider } from '@deepseek-ai/dsh-settings'
-import {
-  OMO_DEFAULT_ROLE,
-  OMO_RPC_CHANNEL,
-  OMO_RPC_ENDPOINTS,
-  apply,
-  inject,
-  name,
-} from '../lib/index.js'
+import { OMO_DEFAULT_ROLE, OmoRoleRegistry } from '../lib/index.js'
 
-class MemorySettings extends SettingsProvider {
-  doc = {}
-  get writable() { return true }
-  load() { return Promise.resolve(structuredClone(this.doc)) }
-  persist(ns, section) {
-    this.doc[ns] = structuredClone(section)
-    return Promise.resolve()
-  }
-}
-
-class MockWebServer extends Service {
-  routes = new Map()
+class MockSettings extends Service {
+  state = { roles: {}, sessions: {} }
   constructor(ctx) {
-    super(ctx, 'webServer')
+    super(ctx, 'settings')
   }
-  register(route) {
-    this.routes.set(route.path, route.handler)
-    return () => { this.routes.delete(route.path) }
-  }
-}
-
-class MockConnection extends Service {
-  channel = undefined
-  handler = undefined
-  constructor(ctx) {
-    super(ctx, 'connection')
-  }
-  get rpc() {
-    return {
-      handle: (channel, handler) => {
-        this.channel = channel
-        this.handler = handler
-        return () => {
-          this.channel = undefined
-          this.handler = undefined
-        }
-      },
-    }
+  configure() { return () => {} }
+  async update(_ns, patch) {
+    this.state = { ...this.state, ...structuredClone(patch) }
   }
 }
 
@@ -62,68 +27,34 @@ class MockLlm extends Service {
   constructor(ctx) {
     super(ctx, 'llm')
   }
-  listProviders() {
-    return [{ id: 'openai' }]
-  }
-  async listModels() {
-    return [{ id: 'gpt-5.5' }, { id: 'deepseek-v4-flash' }]
-  }
+  listProviders() { return [{ id: 'openai' }] }
+  async listModels() { return [{ id: 'gpt-5.5' }, { id: 'deepseek-v4-flash' }] }
 }
 
-const settingsPlugin = {
-  name: 'memory-settings',
-  inject: [],
-  apply(ctx) { ctx.plugin(MemorySettings) },
-}
-
-const webPlugin = {
-  name: 'mock-web-server',
-  inject: [],
-  apply(ctx) { ctx.plugin(MockWebServer) },
-}
-
-const connectionPlugin = {
-  name: 'mock-connection',
-  inject: [],
-  apply(ctx) { ctx.plugin(MockConnection) },
-}
-
-const llmPlugin = {
-  name: 'mock-llm',
-  inject: [],
-  apply(ctx) { ctx.plugin(MockLlm) },
-}
+const settingsPlugin = { name: 'memory-settings', inject: [], apply(ctx) { ctx.plugin(MockSettings) } }
+const llmPlugin = { name: 'mock-llm', inject: [], apply(ctx) { ctx.plugin(MockLlm) } }
 
 async function boot() {
   const ctx = new Context()
   await ctx.plugin(settingsPlugin)
-  await ctx.plugin(webPlugin)
-  await ctx.plugin(connectionPlugin)
   await ctx.plugin(llmPlugin)
-  await ctx.plugin({ name, inject, apply })
-  const web = ctx.get('webServer')
-  const connection = ctx.get('connection')
-  assert.ok(web)
-  assert.ok(connection)
-  return { ctx, web, connection }
+  const settings = ctx.settings
+  const config = {
+    roles: { get: () => settings.state.roles },
+    sessions: { get: () => settings.state.sessions },
+  }
+  await ctx.plugin(OmoRoleRegistry, { config })
+  return { ctx, settings }
 }
 
-/** Invoke the recorded logical RPC handler directly. */
-async function callRpc(connection, endpoint, payload) {
-  assert.equal(connection.channel, OMO_RPC_CHANNEL)
-  assert.equal(typeof connection.handler, 'function')
-  return connection.handler(endpoint, payload)
-}
-
-test('registers the role registry and settings namespace', async () => {
+test('registers the role registry with an empty role config', async () => {
   const { ctx } = await boot()
-  const roles = ctx.omoRoles
-  assert.equal(roles.roleFor('session-a'), OMO_DEFAULT_ROLE)
-  assert.equal(roles.configs()['sisyphus'].fallbackModels.length, 0)
+  assert.equal(ctx.omoRoles.roleFor('session-a'), OMO_DEFAULT_ROLE)
+  assert.equal(ctx.omoRoles.configs()['sisyphus'].fallbackModels.length, 0)
 })
 
-test('persists per-role model config and returns it through the registry', async () => {
-  const { ctx } = await boot()
+test('persists per-role model config through the settings service', async () => {
+  const { ctx, settings } = await boot()
   await ctx.omoRoles.setRoleConfig('prometheus', {
     model: { provider: 'deepseek-official', model: 'deepseek-v4' },
     fallbackModels: [
@@ -134,6 +65,7 @@ test('persists per-role model config and returns it through the registry', async
   const config = ctx.omoRoles.configFor('prometheus')
   assert.deepEqual(config.model, { provider: 'deepseek-official', model: 'deepseek-v4' })
   assert.equal(config.fallbackModels.length, 2)
+  assert.equal(settings.state.roles.prometheus.fallbackModels.length, 2)
   assert.equal(ctx.omoRoles.configFor('sisyphus').fallbackModels.length, 0)
 })
 
@@ -142,8 +74,6 @@ test('resolves omo-default primary and post-primary fallback chains', async () =
   await ctx.omoRoles.refreshDefaultFallbacks()
   const primary = ctx.omoRoles.primaryModelFor('hephaestus')
   assert.deepEqual(primary, { provider: 'openai', model: 'gpt-5.5' })
-  // The omo default primary is also the first available chain entry, so the
-  // effective fallback chain starts AFTER it (omo attachFallbackModels).
   assert.equal(ctx.omoRoles.fallbackModelsFor('hephaestus').length, 0)
 })
 
@@ -170,50 +100,11 @@ test('persists step budget and ultrawork override on a role config', async () =>
   assert.equal(config.ultrawork.model.reasoningEffort, 'high')
 })
 
-test('registers the authenticated RPC channel and no raw /plugins routes', async () => {
-  const { web, connection } = await boot()
-  assert.equal(connection.channel, OMO_RPC_CHANNEL)
-  assert.equal(typeof connection.handler, 'function')
-  assert.equal(web.routes.has('/plugins/@royenheart/dsh-plugin-opencode-omo/roles'), false)
-  assert.equal(web.routes.has('/plugins/@royenheart/dsh-plugin-opencode-omo/role'), false)
-  assert.equal(web.routes.has('/plugins/@royenheart/dsh-plugin-opencode-omo/role-config'), false)
-})
-
-test('serves the role catalog through the RPC channel', async () => {
-  const { connection } = await boot()
-  const result = await callRpc(connection, OMO_RPC_ENDPOINTS.catalogGet, {})
-  assert.equal(result.ok, true)
-  assert.equal(result.value.defaultRole, OMO_DEFAULT_ROLE)
-  assert.ok(Array.isArray(result.value.roles))
-  assert.ok(result.value.roles.length > 0)
-})
-
-test('persists a session role through the RPC channel', async () => {
-  const { ctx, connection } = await boot()
-  const result = await callRpc(connection, OMO_RPC_ENDPOINTS.roleSet, { sessionId: 'session-a', role: 'atlas' })
-  assert.equal(result.ok, true)
-  assert.equal(result.value.currentRole, 'atlas')
+test('persists a session role through the settings service', async () => {
+  const { ctx, settings } = await boot()
+  await ctx.omoRoles.setRole('session-a', 'atlas')
   assert.equal(ctx.omoRoles.roleFor('session-a'), 'atlas')
-})
-
-test('rejects unknown roles through the RPC channel', async () => {
-  const { connection } = await boot()
-  const result = await callRpc(connection, OMO_RPC_ENDPOINTS.roleSet, { sessionId: 'session-a', role: 'nope' })
-  assert.equal(result.ok, false)
-})
-
-test('saves role config through the RPC channel', async () => {
-  const { ctx, connection } = await boot()
-  const result = await callRpc(connection, OMO_RPC_ENDPOINTS.roleConfigSet, {
-    role: 'momus',
-    config: {
-      model: null,
-      fallbackModels: [{ provider: 'deepseek-official', model: 'deepseek-v4-flash' }],
-    },
-  })
-  assert.equal(result.ok, true)
-  assert.equal(result.value.config.fallbackModels.length, 1)
-  assert.equal(ctx.omoRoles.configFor('momus').model, undefined)
+  assert.equal(settings.state.sessions['session-a'], 'atlas')
 })
 
 test('rejects unknown roles through the registry', async () => {

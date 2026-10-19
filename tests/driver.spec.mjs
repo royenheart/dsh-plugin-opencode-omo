@@ -26,7 +26,7 @@ function mockAgent(cwd, events = [], model = 'deepseek-v4') {
     session: {
       id: 'session-test',
       header: { cwd, createdAt: 1234567890 },
-      events,
+      snapshotEvents: () => events,
     },
     options: { provider: 'deepseek-official', model },
   }
@@ -85,6 +85,22 @@ test('plan mode injects the verbatim opencode plan-mode prompt with a real plan 
     assert.match(prompt, /Plan mode is active/)
     assert.match(prompt, /\.opencode\/plans\/1234567890-session-test\.md/)
     assert.match(prompt, /No plan file exists yet/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('plan mode reads the public plan projection before the event log', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-plan-projection-'))
+  try {
+    const ctx = {
+      tools: { schemas: () => [] },
+      get: service => service === 'sessionProjections'
+        ? { stateOf: (_session, key) => key === 'plan' ? { active: true, activeAtLastHeader: null } : undefined }
+        : undefined,
+    }
+    const prompt = systemPromptFor(ctx, roleFace(), mockState(), mockAgent(cwd, []))
+    assert.match(prompt, /Plan mode is active/)
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
@@ -210,7 +226,7 @@ test('unknown model families use the omo dynamic Sisyphus fallback prompt', () =
   }
 })
 
-test('maxSteps section appears in the system prompt at the ceiling on stock 0.1.2', () => {
+test('maxSteps section appears in the system prompt at the ceiling on a stock host', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-maxsteps-'))
   try {
     // step counting: nextPosition = last step/start + 1; three starts propose step 4.
