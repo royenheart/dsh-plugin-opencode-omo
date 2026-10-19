@@ -1,0 +1,13 @@
+{
+  "name": "dsh-plugin-opencode-omo-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end Playwright suite for @royenheart/dsh-plugin-opencode-omo",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

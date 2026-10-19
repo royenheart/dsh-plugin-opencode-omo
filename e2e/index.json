@@ -1,0 +1,82 @@
+{
+  "features": [
+    {
+      "id": "agent-preset",
+      "entry": "New session composer → mode menu → opencode-omo",
+      "expect": "The opencode-omo preset is offered with its omo description; choosing it mounts the plugin's role picker in the composer.",
+      "test": "specs/preset.spec.ts::opencode-omo preset is offered and mounts the composer role picker"
+    },
+    {
+      "id": "composer-role-picker",
+      "entry": "opencode-omo session composer → role chip (角色：Sisyphus - Ultraworker)",
+      "expect": "The chip opens a five-row menu of the omo primary/all roles; choosing a role updates the chip label and description; subagent-only roles are absent.",
+      "test": "specs/role-picker.spec.ts::role picker lists primary omo roles and applies the chosen role"
+    },
+    {
+      "id": "composer-role-scope",
+      "entry": "opencode-omo session → mode menu → Standard mode",
+      "expect": "The omo role chip is not rendered in a non-opencode-omo session.",
+      "test": "specs/role-picker.spec.ts::role picker is hidden outside opencode-omo sessions"
+    },
+    {
+      "id": "settings-section",
+      "entry": "Account menu → Settings → opencode-omo",
+      "expect": "The plugin page opens with the opencode-omo heading, its alignment intro, and the selected 角色设置 tab.",
+      "test": "specs/role-settings.spec.ts::role settings page lists the complete omo role catalog"
+    },
+    {
+      "id": "role-catalog",
+      "entry": "Settings → opencode-omo → 角色设置",
+      "expect": "All 14 omo role boxes render with display name, description, omo default chain, 主模型 selector, and the + fallback control.",
+      "test": "specs/role-settings.spec.ts::role settings page lists the complete omo role catalog"
+    },
+    {
+      "id": "primary-model",
+      "entry": "Role box → 主模型 menu",
+      "expect": "The menu offers 跟随当前 plus the catalog models; pinning a model updates the role box and survives closing/reopening Settings; 跟随当前 resets the row.",
+      "test": "specs/role-settings.spec.ts::primary model selector pins a model, exposes reasoning effort, and follows the session again"
+    },
+    {
+      "id": "reasoning-effort",
+      "entry": "Role box with a pinned reasoning model → effort select",
+      "expect": "The effort select appears under 主模型 with 默认 effort plus adapter efforts; the chosen effort is saved and survives reopening Settings.",
+      "test": "specs/role-settings.spec.ts::primary model selector pins a model, exposes reasoning effort, and follows the session again"
+    },
+    {
+      "id": "fallback-add",
+      "entry": "Role box → + (添加 <role> fallback 模型)",
+      "expect": "A model list opens below the role box with a search field; a picked model becomes a chip and the list stays open for repeated additions; picking the same model again shows 该模型已在 fallback 列表中.",
+      "test": "specs/role-settings.spec.ts::fallback add panel appends chips, supports repeated additions, and rejects duplicates"
+    },
+    {
+      "id": "fallback-search",
+      "entry": "Fallback panel → 搜索模型…",
+      "expect": "Typing filters the offered models; a non-matching query shows 没有匹配的模型.",
+      "test": "specs/role-settings.spec.ts::fallback model search filters the list and reports no matches"
+    },
+    {
+      "id": "fallback-cancel",
+      "entry": "Fallback panel → 取消 (or toggling the + button)",
+      "expect": "The panel closes without adding a fallback chip.",
+      "test": "specs/role-settings.spec.ts::fallback panel cancel adds nothing and chips can be removed"
+    },
+    {
+      "id": "fallback-remove",
+      "entry": "Fallback chip → × (移除 <model>)",
+      "expect": "The chip is removed, and the Fallback 模型 list disappears once no chips remain.",
+      "test": "specs/role-settings.spec.ts::fallback panel cancel adds nothing and chips can be removed"
+    },
+    {
+      "id": "omo-commands",
+      "entry": "opencode-omo composer → type /",
+      "expect": "The host slash menu lists the seven omo commands (start-work, remove-ai-slops, refactor, stop-continuation, handoff, hyperplan, team-mode) with their descriptions.",
+      "test": "specs/commands.spec.ts::composer slash menu offers the seven omo commands"
+    },
+    {
+      "id": "omo-skills",
+      "entry": "opencode-omo composer → type / → Skills",
+      "expect": "The 16 skills shipped with the preset are offered in the slash menu with their descriptions.",
+      "test": "specs/commands.spec.ts::composer slash menu offers the bundled omo skills"
+    }
+  ]
+}
