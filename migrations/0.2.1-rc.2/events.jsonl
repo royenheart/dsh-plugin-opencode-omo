@@ -27,3 +27,4 @@
 {"kind":"event","at":"2026-10-19T18:03:48.735Z","event":{"type":"check.done","result":{"check":"e2e","outcome":"skipped","fingerprint":"","detail":"no suite on dsh-migrate/e2e yet"}}}
 {"kind":"event","at":"2026-10-19T18:03:48.752Z","event":{"type":"tree.inspected","changed":true,"files":41}}
 {"kind":"event","at":"2026-10-19T18:03:54.622Z","event":{"type":"proposal.published","proposal":{"branch":"dsh-migrate/proposal","headSha":"92249f17b8ba2643a2ce32b46b8721d16260af7b","issue":{"number":14,"url":"https://github.com/royenheart/dsh-plugin-opencode-omo/issues/14"},"pullRequest":{"number":15,"url":"https://github.com/royenheart/dsh-plugin-opencode-omo/pull/15"}}}}
+{"kind":"event","at":"2026-10-19T18:24:40.384Z","event":{"type":"e2e.published","outcome":"pushed","detail":"fc2a58c3639a3b1fdbce9fafbbf25c843b6d5bb0","usage":{"inputTokens":107918,"outputTokens":101656,"cacheHitTokens":11082752,"usd":0.11042955600000003}}}
