@@ -1,0 +1,1540 @@
+{
+  "cards": [
+    {
+      "id": "DSH-0.1.2-A1-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-06",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml",
+        "package.json"
+      ],
+      "note": "PTC runtime and workflow-ptc replace the retired code-runtime/worker-thread rows."
+    },
+    {
+      "id": "DSH-0.1.2-A1-07",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml",
+        "presets/opencode-omo/permission-rules.mjs"
+      ],
+      "note": "Preset keeps an explicit fetch:true and its tools/pre-execute permission policy; no approval plugin was removed."
+    },
+    {
+      "id": "DSH-0.1.2-A1-08",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "src/index.ts",
+        "src/client/index.ts"
+      ],
+      "note": "Private connection-RPC channel and raw web routes removed; browser uses the official /api settings Remote."
+    },
+    {
+      "id": "DSH-0.1.2-A1-09",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-10",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-11",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-12",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-13",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-14",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-19",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "tests/e2e-dsh-load.spec.mjs"
+      ],
+      "note": "Acceptance reads window.__DSH_BOOT__ entries by package name and the official settings Remote."
+    },
+    {
+      "id": "DSH-0.1.2-A1-20",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-21",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-22",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-23",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-24",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-25",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "src/client/index.ts",
+        "src/client/RoleSelect.tsx",
+        "package.json"
+      ],
+      "note": "Removed dsh-client-runtime imports; types now come from api-session-controller, ui-session, ui-slots, and dsh-session/types."
+    },
+    {
+      "id": "DSH-0.1.2-A1-26",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "tsdown.config.ts",
+        "package.json"
+      ],
+      "note": "Module-loader id, package name, and boot-manifest entry all remain @royenheart/dsh-plugin-opencode-omo."
+    },
+    {
+      "id": "DSH-0.1.2-A1-27",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-28",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-29",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-30",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-31",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A1-32",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A2-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A2-02",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "src/client/index.ts"
+      ],
+      "note": "Session Remote calls are consumed through the RemoteResult branch; no legacy thrown-error path remains."
+    },
+    {
+      "id": "DSH-0.1.2-A2-03",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "package.json"
+      ],
+      "note": "Peer ranges and the dependency graph were rebuilt for the 0.2.1 cohort."
+    },
+    {
+      "id": "DSH-0.1.2-A2-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A2-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A2-06",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A2-08",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A2-10",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "src/index.ts",
+        "src/client/index.ts",
+        "src/core/omo-settings.ts"
+      ],
+      "note": "Settings moved from the removed runtime namespace API to the entry config form; literals are used at compile time."
+    },
+    {
+      "id": "DSH-0.1.2-A3-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A3-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A4-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A4-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A4-03",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/driver.mjs"
+      ],
+      "note": "Session.events reads replaced with the public snapshotEvents() window; no events array access remains."
+    },
+    {
+      "id": "DSH-0.1.2-A4-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A4-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A4-06",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml"
+      ],
+      "note": "The preset explicitly keeps tool-web fetch:true; it does not insert a second provider row."
+    },
+    {
+      "id": "DSH-0.1.2-A5-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A5-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.2-A5-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A1-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A1-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A1-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A1-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A1-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A1-06",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A1-07",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A1-08",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "src/client/index.ts",
+        "README.md"
+      ],
+      "note": "Composer slot retained at conversation.input.left; real web boot and boot-manifest artifact fetch were re-verified."
+    },
+    {
+      "id": "DSH-0.1.3-A2-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A2-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A2-03",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml"
+      ],
+      "note": "Preset mounts dsh-tool-fs (read/write/edit) and its shims; no tool-str-replace-editor row is referenced."
+    },
+    {
+      "id": "DSH-0.1.3-A2-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.3-A2-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-06",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-07",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/driver.mjs"
+      ],
+      "note": "Prompt ownership stays on the public systemPrompt section/variable API; no header.system read or write remains."
+    },
+    {
+      "id": "DSH-0.1.5-A1-08",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-09",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-10",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-11",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-12",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-13",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-14",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-15",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-16",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-17",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-18",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml",
+        "presets/opencode-omo/task-shim.mjs"
+      ],
+      "note": "tool-subagent rows no longer pass removed backgroundMode/toolFilter fields; tool restrictions moved to driver-side assembly/execution filtering."
+    },
+    {
+      "id": "DSH-0.1.5-A1-19",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A1-20",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-06",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-07",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-08",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-09",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-10",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-11",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-12",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-13",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-14",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-15",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-16",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-17",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-18",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-19",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-20",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "package.json",
+        "tsdown.config.ts"
+      ],
+      "note": "Browser-only libraries stay external/dev-only; the published client bundle has no host dependency in dependencies."
+    },
+    {
+      "id": "DSH-0.1.5-A2-21",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-22",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-23",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-A2-24",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC1-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC1-02",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "src/client/index.ts"
+      ],
+      "note": "The model picker reads the live remote.session.modelCatalog instead of hardcoding the adapter catalog."
+    },
+    {
+      "id": "DSH-0.1.5-RC1-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC1-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC1-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC2-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC2-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC2-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC2-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC2-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.5-RC2-06",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-03",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/driver.mjs"
+      ],
+      "note": "Synchronous log reads moved off the removed events array to the public snapshotEvents() window for prompt preparation."
+    },
+    {
+      "id": "DSH-0.1.6-A1-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-06",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-07",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml"
+      ],
+      "note": "Preset uses @deepseek-ai/dsh-ptc-runtime-node and workflow-ptc; no code-runtime package or row remains."
+    },
+    {
+      "id": "DSH-0.1.6-A1-08",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-09",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-10",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-11",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml"
+      ],
+      "note": "workflow-ptc replaces workflow-worker-thread and uses the base Node PTC runtime."
+    },
+    {
+      "id": "DSH-0.1.6-A1-12",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-13",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-14",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-15",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-16",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-17",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-18",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-19",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-20",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-21",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-22",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-23",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-24",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-25",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-26",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-27",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml"
+      ],
+      "note": "Preset row inventory uses ptc-runtime + workflow-ptc, not the retired worker-thread row."
+    },
+    {
+      "id": "DSH-0.1.6-A1-28",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-29",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml"
+      ],
+      "note": "tool-ralph is deliberately mounted by this preset as an opt-in product capability, not inherited from base defaults."
+    },
+    {
+      "id": "DSH-0.1.6-A1-30",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-31",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-32",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/agent.cordis.yml",
+        "package.json"
+      ],
+      "note": "Removed worker-thread code-runtime package references; remaining packages are in the 0.2.1 ledger."
+    },
+    {
+      "id": "DSH-0.1.6-A1-33",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-34",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-35",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-36",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-37",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A1-38",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A2-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A2-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A2-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.6-A2-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A1-01",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "src/client/RoleSelect.tsx",
+        "src/client/RoleSettings.tsx"
+      ],
+      "note": "Every *16 icon import was replaced with the Regular/Medium primitive exports."
+    },
+    {
+      "id": "DSH-0.1.7-A1-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A1-03",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "src/index.ts",
+        "src/client/index.ts",
+        "src/core/omo-settings.ts"
+      ],
+      "note": "Settings live in the current profile entry's volatile config and are edited through ctx.configForms."
+    },
+    {
+      "id": "DSH-0.1.7-A1-04",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "cordis.patch.yml",
+        "tests/preset-declaration.spec.mjs"
+      ],
+      "note": "The preset is declared by the bundle's official @deepseek-ai/dsh-agent-preset row."
+    },
+    {
+      "id": "DSH-0.1.7-A1-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A1-06",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A1-07",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A1-08",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A1-09",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A1-10",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A1-11",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A2-01",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A2-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A2-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-A2-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-RC1-01",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "package.json"
+      ],
+      "note": "Every DSH peer is now ^0.2.1-rc.2, which admits the 0.2.1-rc.2 prerelease under npm's same-major.minor.patch rule."
+    },
+    {
+      "id": "DSH-0.1.7-RC1-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-RC1-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-RC1-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.1.7-RC1-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.2.0-RC1-01",
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "package.json"
+      ],
+      "note": "Host peers moved to the 0.2.1-rc.2 floor; the old ^0.1.x and ^0.2.0-rc.1 floors are gone."
+    },
+    {
+      "id": "DSH-0.2.0-RC1-02",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.2.0-RC1-03",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.2.0-RC1-04",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.2.0-RC1-05",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    },
+    {
+      "id": "DSH-0.2.0-RC1-06",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
+      "evidence": [],
+      "note": ""
+    }
+  ]
+}

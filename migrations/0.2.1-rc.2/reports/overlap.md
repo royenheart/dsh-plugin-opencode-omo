@@ -1,0 +1,9 @@
+# 5. Risks
+
+- **The plugin is not yet fully mountable on 0.2.1.** The patch is ready, but the settings APIs (`settings.register`, `settingsScope`) and the preset publication path are 0.1.x-era. Until the two migrations above land, the product entry points exist in documentation but not in a working 0.2.1 composition.
+- **The core patch is not upstream.** It may conflict with a future official request-tail design; the plugin’s capability probe keeps the system-section fallback so stock hosts never lose the ceiling text, but the patched path remains a local branch.
+- **The loop regression test was not executed.** `git apply --check` and the pure header/token checks passed; the included loop test needs the full pnpm/vitest workspace. This is the main verification gap.
+- **The `dsh-persona` switch is untested.** The persona row resolves variables and complete-prompt order differently from the current direct section; it should be validated with a real preset mount before deleting the current path.
+- **Token-meter breakdown remains partial.** `estimateHeaderTokens` prices the prefill in pressure totals, but `contextBreakdown` still classifies only system/tools/message surface nodes; the prefill is not in that breakdown bucket.
+- **Preset declaration path resolution is the riskiest migration detail.** The existing preset uses relative `./driver.mjs` names and local asset paths; an inline declaration must preserve their resolution (or use an include/package-relative form), and a broken declaration leaves the preset row visible but unable to compose a session.
+- **Legacy install documentation could mislead.** The README now states the 0.2.1 requirement, but the retained `install.py` path still publishes the old directory unless the declaration migration lands.
