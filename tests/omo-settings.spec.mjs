@@ -1,6 +1,6 @@
 /**
- * Pure normalization tests for the opencode-omo settings section and the RPC
- * payload parsers. No dsh services are required.
+ * Pure normalization tests for the opencode-omo settings section. No dsh
+ * services are required.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -10,17 +10,10 @@ import {
   OMO_ROLE_SETTINGS_NAMESPACE,
   sanitizeStoredRoleConfigs,
 } from '../src/core/omo-settings.ts'
-import {
-  OMO_RPC_CHANNEL,
-  OMO_RPC_ENDPOINTS,
-  parseOmoCatalogGetRequest,
-  parseOmoRoleConfigSetRequest,
-  parseOmoRoleSetRequest,
-} from '../src/core/omo-rpc.ts'
 import { normalizeRoleConfig } from '../src/omo-role-registry.ts'
 
 test('settings namespace is the stable id', () => {
-  assert.equal(OMO_ROLE_SETTINGS_NAMESPACE, 'opencode-omo-roles')
+  assert.equal(OMO_ROLE_SETTINGS_NAMESPACE, 'opencode-omo')
 })
 
 test('normalizeOmoSettingsSection reads stored role configs into the runtime shape', () => {
@@ -89,41 +82,4 @@ test('normalizeRoleConfig tolerates legacy empty ultrawork.model', () => {
   })
   assert.equal(config.ultrawork, undefined)
   assert.equal(config.fallbackModels.length, 1)
-})
-
-test('rpc channel is a single-segment logical channel', () => {
-  assert.equal(OMO_RPC_CHANNEL, '/opencode-omo')
-  assert.match(OMO_RPC_CHANNEL, /^\/[A-Za-z0-9._~-]+$/)
-})
-
-test('rpc endpoints are stable', () => {
-  assert.equal(OMO_RPC_ENDPOINTS.catalogGet, 'catalog/get')
-  assert.equal(OMO_RPC_ENDPOINTS.roleSet, 'role/set')
-  assert.equal(OMO_RPC_ENDPOINTS.roleConfigSet, 'role-config/set')
-})
-
-test('parseOmoCatalogGetRequest accepts empty and sessionId payloads', () => {
-  assert.deepEqual(parseOmoCatalogGetRequest({}), {})
-  assert.deepEqual(parseOmoCatalogGetRequest({ sessionId: 'session-a' }), { sessionId: 'session-a' })
-  assert.equal(parseOmoCatalogGetRequest({ sessionId: '' }), undefined)
-  assert.equal(parseOmoCatalogGetRequest('bad'), undefined)
-})
-
-test('parseOmoRoleSetRequest validates the role', () => {
-  assert.deepEqual(
-    parseOmoRoleSetRequest({ sessionId: 'session-a', role: 'atlas' }),
-    { sessionId: 'session-a', role: 'atlas' },
-  )
-  assert.equal(parseOmoRoleSetRequest({ sessionId: 'session-a', role: 'nope' }), undefined)
-  assert.equal(parseOmoRoleSetRequest({ sessionId: '', role: 'atlas' }), undefined)
-})
-
-test('parseOmoRoleConfigSetRequest validates the shape', () => {
-  assert.deepEqual(
-    parseOmoRoleConfigSetRequest({ role: 'momus', config: { fallbackModels: [] } }),
-    { role: 'momus', config: { fallbackModels: [] } },
-  )
-  assert.equal(parseOmoRoleConfigSetRequest({ role: 'nope', config: {} }), undefined)
-  assert.equal(parseOmoRoleConfigSetRequest({ role: 'momus', config: 'bad' }), undefined)
-  assert.equal(parseOmoRoleConfigSetRequest({ role: 'momus', config: null }), undefined)
 })

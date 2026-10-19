@@ -14,15 +14,16 @@
 // - Named specialist / task() children pin an omo role and keep this complete
 //   section (no static persona overlay), so they see `<env>` + the specialist
 //   body instead of the dsh harness identity.
-// - maxSteps + MAX_STEPS_PROMPT render as a system-prompt section at the
-//   ceiling (see `maxStepsSectionFor`); no dsh-side patch is used.
+// - maxSteps + MAX_STEPS_PROMPT use the patched request-only assistant tail
+//   when the installed loop advertises it, and the documented system-prompt
+//   section fallback otherwise (see `maxStepsSectionFor`).
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { applyOmoDelegationCatalog } from './delegation-surface.mjs'
 import { applyOmoLspCatalog } from './lsp-surface.mjs'
 import { renderRulesFor } from './rules.mjs'
-import { roleForDelegationCall } from './task-shim.mjs'
+import { roleForDelegationCall, toolRestrictionForDelegation } from './task-shim.mjs'
 
 export const name = 'opencode-omo-loop'
 
@@ -31,8 +32,14 @@ export const inject = ['systemPrompt', 'tools']
 const PERSONA_SECTION = 'deployment:persona'
 const PERSONA_ORDER = 0
 
-/** Role to pin on a child created inside the current named-tool / task() call. */
-const pendingChildRole = new AsyncLocalStorage()
+/** Role and inherited tool restriction for a child created inside the current named-tool / task() call. */
+const pendingChild = new AsyncLocalStorage()
+
+/** Whether the installed agent-loop advertises the request-only assistant prefill patch. */
+let assistantPrefillSupported = false
+
+/** Restriction pinned to a delegated child by its named tool / task(subagent_type). */
+const childRestrictions = new Map()
 
 const PROMPT_DIR = new URL('roles/prompts/', import.meta.url)
 const LEGACY_PROMPT_DIR = new URL('roles/', import.meta.url)
@@ -45,24 +52,41 @@ const planPromptCache = new Map()
 const rolePromptCache = new Map()
 const personaCache = new Map()
 
+/**
+ * Current plan state from the public `plan` session projection. The projection
+ * is registered by the composed plan-mode plugin; a detached test host without
+ * the projection keeps the explicit log fallback below.
+ */
+function planProjection(ctx, session) {
+  try {
+    return ctx?.get?.('sessionProjections')?.stateOf?.(session, 'plan')
+  } catch {
+    return undefined
+  }
+}
+
 /** dsh folds plan mode from the durable `plan/mode` event stream. */
-function planModeActive(session) {
-  const event = session.events.findLast(item => item.type === 'plan/mode')
+function planModeActive(ctx, session) {
+  const projected = planProjection(ctx, session)
+  if (projected !== undefined) return projected.active === true
+  const event = session.snapshotEvents().findLast(item => item.type === 'plan/mode')
   return event?.data?.active === true
 }
 
 /** Plan state at the last logged request header (mirrors dsh plan-mode narration). */
-function planModeAtLastHeader(session) {
+function planModeAtLastHeader(ctx, session) {
+  const projected = planProjection(ctx, session)
+  if (projected !== undefined) return projected.activeAtLastHeader ?? undefined
   let lastHeader = -1
   let index = 0
-  for (const event of session.events) {
+  for (const event of session.snapshotEvents()) {
     if (event.type === 'request/header') lastHeader = index
     index += 1
   }
   if (lastHeader < 0) return undefined
   let active
   for (index = 0; index < lastHeader; index += 1) {
-    const event = session.events[index]
+    const event = session.snapshotEvents()[index]
     if (event?.type === 'plan/mode') active = event.data?.active === true
   }
   return active
@@ -92,8 +116,8 @@ function planPrompt(file) {
   }
 }
 
-function activePlanPrompt(session) {
-  if (!planModeActive(session)) return undefined
+function activePlanPrompt(ctx, session) {
+  if (!planModeActive(ctx, session)) return undefined
   const template = planPrompt('plan-mode.txt') ?? planPrompt('plan.txt')
   if (template === undefined) return undefined
   if (!template.includes('${planInfo}')) return template
@@ -111,11 +135,11 @@ function buildSwitchPrompt() {
   return planPrompt('build-switch.txt')
 }
 
-function buildSwitchFor(session) {
+function buildSwitchFor(ctx, session) {
   // The step immediately after plan mode was committed off: the last logged
   // request header described plan mode, the current durable state does not.
-  if (planModeActive(session)) return undefined
-  if (planModeAtLastHeader(session) !== true) return undefined
+  if (planModeActive(ctx, session)) return undefined
+  if (planModeAtLastHeader(ctx, session) !== true) return undefined
   const plan = planFilePath(session)
   const reminder = buildSwitchPrompt() ?? ''
   if (plan === undefined || !existsSync(plan)) return reminder
@@ -631,17 +655,28 @@ function opencodeUsesPatch(model) {
     && !model.includes('gpt-4')
 }
 
-function opencodeTools(tools, model) {
+function opencodeTools(tools, model, restriction) {
   const usePatch = opencodeUsesPatch(model)
   return applyOmoLspCatalog(applyOmoDelegationCatalog(tools)).filter(tool => {
     if (tool.name === 'apply_patch') return usePatch
     if (tool.name === 'edit' || tool.name === 'write') return !usePatch
-    return true
+    return toolAllowed(tool.name, restriction)
   })
 }
 
+/** Whether one tool name survives a delegated child's inherited restriction. */
+function toolAllowed(name, restriction) {
+  if (restriction === undefined) return true
+  if (Array.isArray(restriction.allow)) return restriction.allow.includes(name)
+  if (Array.isArray(restriction.deny)) return !restriction.deny.includes(name)
+  return true
+}
+
 /** Execution-side counterpart of the prompt-side gate (model-visible tools only). */
-function gateToolCall(name, model) {
+function gateToolCall(name, model, restriction) {
+  if (!toolAllowed(name, restriction)) {
+    return `opencode-omo: "${name}" is not available to this delegated role`
+  }
   const usePatch = opencodeUsesPatch(model)
   if (name === 'apply_patch' && !usePatch) {
     return 'opencode-omo: apply_patch is not exposed for this model family (edit/write are the file tools)'
@@ -652,7 +687,7 @@ function gateToolCall(name, model) {
   return undefined
 }
 
-export { atlasVariantFile, familyFileFor, gateToolCall, hephaestusVariantFile, opencodeUsesPatch, specialistVariantFile }
+export { atlasVariantFile, familyFileFor, gateToolCall, hephaestusVariantFile, opencodeTools, opencodeUsesPatch, specialistVariantFile }
 
 // Mirrors opencode's ctx.project.vcs === "git" check: walk up from the session
 // cwd looking for a .git entry (handles worktrees/submodules whose .git is a
@@ -708,15 +743,15 @@ function messageText(message) {
 function currentPosition(session) {
   let turn = 0
   let lastStep = 0
-  for (let index = session.events.length - 1; index >= 0; index -= 1) {
-    const event = session.events[index]
+  for (let index = session.snapshotEvents().length - 1; index >= 0; index -= 1) {
+    const event = session.snapshotEvents()[index]
     if (event?.type === 'turn/start') {
       turn = event.data.turn ?? 0
       break
     }
   }
-  for (let index = session.events.length - 1; index >= 0; index -= 1) {
-    const event = session.events[index]
+  for (let index = session.snapshotEvents().length - 1; index >= 0; index -= 1) {
+    const event = session.snapshotEvents()[index]
     if (event?.type === 'step/start' && event.data.turn === turn) {
       lastStep = event.data.step ?? 0
       break
@@ -742,7 +777,8 @@ function currentRouteModel(state, session, agent) {
 function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
   const session = agent.session
   const role = omoRoles?.roleFor?.(session.id) ?? 'sisyphus'
-  const tools = schemasFor(ctx, agent)
+  const restriction = restrictionFor(agent)
+  const tools = schemasFor(ctx, agent).filter(tool => toolAllowed(tool?.name, restriction))
   // The prompt family must follow the model this step actually routes to, not
   // the session's previous route (omo re-bakes the prompt for the live model).
   const roleSystem = rolePromptFor(role, model, tools)
@@ -753,10 +789,10 @@ function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
   const baseBody = family !== undefined
     ? sisyphusIdentityMarkdown() + '\n\n' + renderFamilyPrompt(family, tools)
     : roleSystem ?? personaText()
-  const buildSwitch = buildSwitchFor(session)
-  const plan = activePlanPrompt(session)
-  // maxSteps + MAX_STEPS_PROMPT always ride the system prompt at the ceiling
-  // on stock 0.1.2 (see maxStepsSectionFor); no dsh-side patch path remains.
+  const buildSwitch = buildSwitchFor(ctx, session)
+  const plan = activePlanPrompt(ctx, session)
+  // maxSteps + MAX_STEPS_PROMPT ride the request-only assistant tail when the
+  // installed loop advertises the patch; otherwise they stay a system section.
   const maxStepsSection = maxStepsSectionFor(omoRoles, session)
   const body = [
     ...(maxStepsSection === undefined ? [] : [maxStepsSection]),
@@ -793,6 +829,20 @@ function schemasFor(ctx, agent) {
   } catch {
     return []
   }
+}
+
+/** The exact initiating Agent for this prompt assembly / agent-scoped listener. */
+function currentAgent(ctx) {
+  try {
+    return ctx.get('agents')?.currentInitiator()
+  } catch {
+    return undefined
+  }
+}
+
+/** Tool restriction pinned to a delegated child, if any. */
+function restrictionFor(agent) {
+  return childRestrictions.get(agent.session.id)
 }
 
 /** State per live agent: fallback chain position, ultrawork turn, and the prompt/request-consistent route per turn:step. */
@@ -935,16 +985,24 @@ function fallbackRetryable(failure) {
 export { fallbackRetryable }
 
 /**
- * Stock 0.1.2 maxSteps path: render opencode's MAX_STEPS_PROMPT as a
- * system-prompt section for the step that reaches the ceiling — the same
- * text and trigger as opencode, differing only in role (system prefix
- * instead of a trailing assistant continuation). The omo prompt re-renders
- * every step, so no dsh seam is needed.
+ * Stock-host maxSteps path: render opencode's MAX_STEPS_PROMPT as a
+ * system-prompt section for the step that reaches the ceiling — the same text
+ * and trigger as opencode, differing only in role. A host carrying
+ * `patches/0001-agent-pre-step-assistant-prefill.patch` advertises
+ * `supportsAssistantPrefill` and uses the request-only assistant tail instead.
  */
 function maxStepsSectionFor(omoRoles, session) {
+  if (assistantPrefillSupported) return undefined
   const maxSteps = maxStepsFor(omoRoles, session)
   if (!Number.isFinite(maxSteps)) return undefined
   return nextPosition(session).step >= maxSteps ? MAX_STEPS_PROMPT : undefined
+}
+
+/** Whether this proposed step is the first at/over the role's step ceiling. */
+function maxStepsReached(omoRoles, session) {
+  const maxSteps = maxStepsFor(omoRoles, session)
+  if (!Number.isFinite(maxSteps)) return false
+  return nextPosition(session).step >= maxSteps
 }
 
 export { maxStepsSectionFor }
@@ -959,6 +1017,8 @@ export function apply(ctx) {
     // default sisyphus prompt and the normal session model.
     omoRoles = undefined
   }
+
+  assistantPrefillSupported = ctx.get('agentLoop')?.supportsAssistantPrefill === true
 
   const stateFor = (agent) => {
     let state = states.get(agent.session.id)
@@ -980,14 +1040,15 @@ export function apply(ctx) {
     name: PERSONA_SECTION,
     order: PERSONA_ORDER,
     complete: true,
-    text: (context) => {
-      if (context.agent === undefined) return personaText()
+    text: () => {
+      if (currentAgent(ctx) === undefined) return personaText()
       return '{{opencode_omo_prompt}}'
     },
   }), 'opencode-omo-loop: complete persona section')
-  ctx.effect(() => ctx.systemPrompt.variable('opencode_omo_prompt', (context) => {
-    if (context.agent === undefined) return personaText()
-    return systemPromptFor(ctx, omoRoles, stateFor(context.agent), context.agent)
+  ctx.effect(() => ctx.systemPrompt.variable('opencode_omo_prompt', () => {
+    const agent = currentAgent(ctx)
+    if (agent === undefined) return personaText()
+    return systemPromptFor(ctx, omoRoles, stateFor(agent), agent)
   }), 'opencode-omo-loop: complete persona variable')
   ctx.systemPrompt.suppressRuntimeContext()
 
@@ -997,9 +1058,9 @@ export function apply(ctx) {
   // before the preset mounts): `next()` then returns the variables carrying
   // the session's live provider/model, and the route stored here is the same
   // one `agent/request` enforces on the actual LLM call.
-  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+  ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
     const transformed = await next()
-    const agent = context.agent
+    const agent = currentAgent(ctx)
     if (agent === undefined) return transformed
     const state = stateFor(agent)
     const position = nextPosition(agent.session)
@@ -1013,8 +1074,18 @@ export function apply(ctx) {
     transformed.variables.opencode_omo_prompt = renderOmoPrompt(
       ctx, omoRoles, state, agent, route.provider, route.model,
     )
-    return { ...transformed, tools: opencodeTools(transformed.tools, route.model) }
+    return { ...transformed, tools: opencodeTools(transformed.tools, route.model, restrictionFor(agent)) }
   }, { prepend: true })
+
+  // Request-only assistant tail for opencode's MAX_STEPS_PROMPT. The patched
+  // loop logs it on request/header and appends it to exactly that request;
+  // unpatched hosts keep the system-section fallback rendered above.
+  ctx.on('agent/pre-step', async ({ agent }, next) => {
+    const decision = await next()
+    if (!assistantPrefillSupported || decision.kind !== 'enter') return decision
+    if (!maxStepsReached(omoRoles, agent.session)) return decision
+    return { ...decision, assistantPrefill: MAX_STEPS_PROMPT }
+  })
 
   // Execution-side mirror of the model-visible gate: a hallucinated call to a
   // tool this model family does not see must not dispatch through the original
@@ -1023,7 +1094,7 @@ export function apply(ctx) {
     if (exec.agent === undefined) return next()
     const reason = gateToolCall(exec.name, currentRouteModel(
       stateFor(exec.agent), exec.agent.session, exec.agent,
-    ))
+    ), restrictionFor(exec.agent))
     if (reason !== undefined) return { kind: 'deny', reason }
     return next()
   })
@@ -1100,6 +1171,7 @@ export function apply(ctx) {
 
   ctx.on('agent/disposed', ({ agent }) => {
     states.delete(agent.session.id)
+    childRestrictions.delete(agent.session.id)
   })
 
   // Named specialist tools and task() spawn children without a static
@@ -1109,12 +1181,14 @@ export function apply(ctx) {
   ctx.on('tools/execute', async (exec, next) => {
     const role = roleForDelegationCall(exec.name, exec.arguments)
     if (role === undefined) return next()
-    return pendingChildRole.run(role, () => next())
+    const restriction = toolRestrictionForDelegation(exec.name, exec.arguments)
+    return pendingChild.run({ role, restriction }, () => next())
   })
   ctx.on('agent/created', ({ agent }) => {
     if (agent?.session?.header?.origin !== 'subagent') return
-    const role = pendingChildRole.getStore()
-    if (role === undefined || typeof omoRoles?.pinRole !== 'function') return
-    omoRoles.pinRole(agent.session.id, role)
+    const pending = pendingChild.getStore()
+    if (pending === undefined) return
+    if (typeof omoRoles?.pinRole === 'function') omoRoles.pinRole(agent.session.id, pending.role)
+    if (pending.restriction !== undefined) childRestrictions.set(agent.session.id, pending.restriction)
   })
 }

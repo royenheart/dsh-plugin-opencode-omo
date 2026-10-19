@@ -22,7 +22,7 @@ function roleFace() {
 
 function mockAgent(model) {
   return {
-    session: { id: 'session-test', header: { cwd: '/tmp', createdAt: 1 }, events: [] },
+    session: { id: 'session-test', header: { cwd: '/tmp', createdAt: 1 }, snapshotEvents: () => [] },
     options: { provider: 'test', model },
   }
 }

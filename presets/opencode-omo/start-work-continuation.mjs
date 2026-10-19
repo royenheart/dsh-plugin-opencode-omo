@@ -95,7 +95,7 @@ function readWorkspaceFile(cwd, relative) {
 function runningJobCount(ctx, agent) {
   const jobs = optionalJobs(ctx)
   if (jobs === undefined || typeof jobs.list !== 'function') return 0
-  return jobs.list(agent).filter(job => job.status === 'running' || job.status === 'stopping').length
+  return jobs.list(agent.id).filter(job => job.status === 'running' || job.status === 'stopping').length
 }
 
 export function apply(ctx) {

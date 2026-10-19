@@ -205,13 +205,18 @@ export function apply(ctx) {
       if (jobs === undefined) {
         throw new Error('background_output requires the dsh jobs service')
       }
+      const caller = exec.agent?.id
       if (args.wait === true && typeof jobs.wait === 'function') {
-        await jobs.wait(parsed.id, args.timeout_ms, exec.agent, exec.signal)
+        await jobs.wait(parsed.id, typeof args.timeout_ms === 'number' && args.timeout_ms > 0 ? args.timeout_ms : 30_000, caller, exec.signal)
       }
-      const read = jobs.read(parsed.id, exec.agent)
-      const job = presentJob(read.snapshot)
+      const read = jobs.read(parsed.id, caller)
+      const body = read.chunks
+        .filter(chunk => chunk.channel !== 'log')
+        .map(chunk => chunk.text)
+        .join('')
+      const job = presentJob(read.job)
       return {
-        text: read.text ?? '',
+        text: `${body}${read.result === undefined ? '' : read.result}`,
         task_id: job?.id ?? toBackgroundTaskId(parsed.id),
         status: job?.status ?? 'unknown',
       }
@@ -267,7 +272,7 @@ export function apply(ctx) {
       if (jobs === undefined) {
         throw new Error('background_cancel requires the dsh jobs service')
       }
-      const result = jobs.kill(parsed.id, exec.agent, 'background_cancel')
+      const result = jobs.kill(parsed.id, exec.agent?.id, 'background_cancel')
       return {
         outcome: result === 'already-finished' ? 'already-finished' : 'cancellation-requested',
         task_id: toBackgroundTaskId(parsed.id),

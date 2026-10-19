@@ -10,7 +10,7 @@
 //    in the parent; the same loop is a direct `deny` in a child.
 //
 // Every other allow/deny rule is already enforced by dsh-native sandbox policy,
-// named-subagent toolFilter rows, and the driver's model-family tool gate.
+// the driver's named-role restriction map, and the driver's model-family tool gate.
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 export const name = 'opencode-omo-permission-rules'

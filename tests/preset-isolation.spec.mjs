@@ -21,9 +21,8 @@ import { createRequire } from 'node:module'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SkillRegistry } from '@deepseek-ai/dsh-skill'
 import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
-import { SettingsProvider } from '@deepseek-ai/dsh-settings'
-import { apply as applyHost, inject as hostInject, name as hostName } from '../lib/index.js'
 import { apply as applyCommentChecker } from '../presets/opencode-omo/comment-checker.mjs'
+import { SUBAGENT_TYPE_DEFS } from '../presets/opencode-omo/task-shim.mjs'
 
 const require = createRequire(import.meta.url)
 
@@ -52,7 +51,11 @@ async function importPeer(fromPackage, name) {
 
 function hostInsert() {
   const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
-  return patch.split('\n- insert:\n')[1] ?? ''
+  const start = patch.indexOf('\n- insert:\n')
+  if (start < 0) return ''
+  const rest = patch.slice(start + '\n- insert:\n'.length)
+  const next = rest.indexOf('\n- insert:\n')
+  return next < 0 ? rest : rest.slice(0, next)
 }
 
 function dshTool(name, parameters) {
@@ -125,35 +128,6 @@ class StubFs extends Service {
   }
 }
 
-class MemorySettings extends SettingsProvider {
-  doc = {}
-  get writable() { return true }
-  load() { return Promise.resolve(structuredClone(this.doc)) }
-  persist(ns, section) {
-    this.doc[ns] = structuredClone(section)
-    return Promise.resolve()
-  }
-}
-
-class MockWebServer extends Service {
-  routes = new Map()
-  constructor(ctx) {
-    super(ctx, 'webServer')
-  }
-  register(route) {
-    this.routes.set(route.path, route.handler)
-    return () => { this.routes.delete(route.path) }
-  }
-}
-
-class MockLlm extends Service {
-  constructor(ctx) {
-    super(ctx, 'llm')
-  }
-  listProviders() { return [] }
-  async listModels() { return [] }
-}
-
 async function mintScope(ctx, createScope, id, inject) {
   const key = { id }
   let scope
@@ -174,12 +148,6 @@ async function loadOmoPreset(scopeCtx) {
   }
   scopeCtx.emit('agent/created', { agent: { ctx: scopeCtx } })
   return loaded
-}
-
-async function loadHostPlugin(ctx) {
-  if (!injectSatisfied(ctx, { inject: hostInject })) return false
-  await ctx.plugin({ name: hostName, inject: hostInject, apply: applyHost })
-  return true
 }
 
 function emptySurface() {
@@ -234,34 +202,32 @@ test('omo agent-plane modules live in the preset composition, not the host patch
   const preset = readFileSync(new URL('../presets/opencode-omo/agent.cordis.yml', import.meta.url), 'utf8')
   const insert = hostInsert()
   for (const module of [
-    './apply-patch.mjs',
-    './hashline.mjs',
-    './task-shim.mjs',
-    './delegation-surface.mjs',
-    './lsp-surface.mjs',
-    './start-work-continuation.mjs',
-    './omo-skills.mjs',
-    './omo-commands.mjs',
-    './driver.mjs',
-    './tool-surface.mjs',
+    'apply-patch.mjs',
+    'hashline.mjs',
+    'task-shim.mjs',
+    'delegation-surface.mjs',
+    'lsp-optional.mjs',
+    'start-work-continuation.mjs',
+    'omo-skills.mjs',
+    'omo-commands.mjs',
+    'driver.mjs',
+    'tool-surface.mjs',
   ]) {
-    assert.match(preset, new RegExp(module.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-    assert.doesNotMatch(insert, new RegExp(module.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.ok(preset.includes(module), `${module} missing from preset composition`)
+    assert.ok(!insert.includes(module), `${module} leaked into host patch`)
   }
   assert.match(preset, /toolName:/)
   assert.doesNotMatch(insert, /toolName:/)
 })
 
-test('named-role deny lists that block task also block call_omo_agent and plan', () => {
-  const preset = readFileSync(new URL('../presets/opencode-omo/agent.cordis.yml', import.meta.url), 'utf8')
-  const blocks = [...preset.matchAll(/deny:\n((?:            - .+\n)+)/g)].map(match => match[1])
-  assert.ok(blocks.length >= 9, `expected named deny lists, got ${blocks.length}`)
+test('named-role restrictions that block task also block call_omo_agent and plan', () => {
   let taskBlocks = 0
-  for (const block of blocks) {
-    if (!block.includes('- task\n')) continue
+  for (const definition of Object.values(SUBAGENT_TYPE_DEFS)) {
+    const denied = definition.toolFilter?.deny
+    if (!Array.isArray(denied) || !denied.includes('task')) continue
     taskBlocks += 1
-    assert.match(block, /call_omo_agent/)
-    assert.match(block, /- plan\n/)
+    assert.ok(denied.includes('call_omo_agent'))
+    assert.ok(denied.includes('plan'))
   }
   assert.ok(taskBlocks >= 9, `expected task deny lists, got ${taskBlocks}`)
 })
@@ -270,9 +236,6 @@ test('sibling tools and prompts stay identical after this plugin loads', async (
   const { createScope } = await importPeer('@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-scope')
   const { default: SystemPrompt } = await importPeer('@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-system-prompt')
   const ctx = new Context()
-  await ctx.plugin({ name: 'memory-settings', apply(host) { host.plugin(MemorySettings) } })
-  await ctx.plugin({ name: 'mock-web-server', apply(host) { host.plugin(MockWebServer) } })
-  await ctx.plugin({ name: 'mock-llm', apply(host) { host.plugin(MockLlm) } })
   await ctx.plugin({ name: 'stub-fs', apply(host) { host.plugin(StubFs) } })
   await ctx.plugin(SystemPrompt, { persona: 'You are a helpful software engineer assistant.' })
   await ctx.plugin(ToolRuntime)
@@ -308,12 +271,9 @@ test('sibling tools and prompts stay identical after this plugin loads', async (
   }))
 
   const before = await snapshotViews(ctx, keys)
-  const hostLoaded = await loadHostPlugin(ctx)
   const loaded = await loadOmoPreset(omo.scope.ctx)
-  assert.equal(hostLoaded, true)
   assert.ok(loaded.includes('opencode-omo-tool-surface'), `expected tool-surface, loaded ${loaded.join(', ')}`)
   assert.ok(loaded.includes('opencode-omo-loop'), `expected driver, loaded ${loaded.join(', ')}`)
-  assert.ok(loaded.includes('opencode-omo-lsp-surface'), `expected lsp-surface, loaded ${loaded.join(', ')}`)
   const after = await snapshotViews(ctx, keys)
 
   assertSiblingCatalogsFrozen(before, after)

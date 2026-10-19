@@ -8,14 +8,14 @@
  * cookie. When no authenticated page is reachable, the test is skipped.
  *
  * It:
- * - fetches the served page and finds the opencode-omo client bundle entry;
+ * - fetches the served page and reads the host's `__DSH_BOOT__` manifest;
+ * - finds the opencode-omo client bundle entry by package name;
  * - downloads that bundle and evaluates it under the same module-loader mock
  *   used by the offline client-bundle test;
  * - asserts the plugin face still exports `apply`, `RoleSelect`, and
  *   `RoleSettingsSection`;
- * - probes the authenticated `/opencode-omo` RPC channel and expects either a
- *   valid RPC answer (200) or an unauthenticated rejection (401), never a
- *   missing-route 404/405.
+ * - asserts the client uses the official settings form and no longer ships a
+ *   private RPC channel.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -24,8 +24,6 @@ import vm from 'node:vm'
 const DSH_WEB_URL = (process.env.DSH_WEB_URL ?? 'http://127.0.0.1:3080').replace(/\/+$/, '')
 const DSH_WEB_TOKEN = process.env.DSH_WEB_TOKEN ?? ''
 const PACKAGE_ID = '@royenheart/dsh-plugin-opencode-omo'
-const RPC_CHANNEL = '/opencode-omo'
-const RPC_ENDPOINT = 'catalog/get'
 
 async function fetchOrNull(url, init) {
   try {
@@ -96,7 +94,10 @@ function evaluateBundle(code) {
     '@deepseek-ai/dsh-client-ui-slots': {},
     '@deepseek-ai/dsh-client-web-react': {},
     '@deepseek-ai/dsh-client-ui-primitives': {
-      IconChevronDownOutline14: () => null,
+      IconAgentPresetOutlineRegular: () => null,
+      IconChevronDownOutlineRegular: () => null,
+      IconPlusOutlineRegular: () => null,
+      IconCloseOutlineRegular: () => null,
       Menu: () => null,
       Modal: () => null,
     },
@@ -116,6 +117,21 @@ function evaluateBundle(code) {
   })
 }
 
+/** Read one row from the host-injected `__DSH_BOOT__` graph. */
+function bootEntry(html, id) {
+  const marker = 'globalThis["__DSH_BOOT__"] = '
+  const markerAt = html.indexOf(marker)
+  assert.notEqual(markerAt, -1, 'page has no __DSH_BOOT__ manifest')
+  const jsonAt = markerAt + marker.length
+  const endAt = html.indexOf('</script>', jsonAt)
+  assert.notEqual(endAt, -1, 'page has a truncated __DSH_BOOT__ manifest')
+  const graph = JSON.parse(html.slice(jsonAt, endAt).trim().replace(/;$/, ''))
+  assert.ok(Array.isArray(graph.entries), 'boot manifest has no entries')
+  const entry = graph.entries.find(item => item.id === id)
+  assert.ok(entry, `boot manifest does not advertise ${id}`)
+  return entry
+}
+
 test('loaded plugin survives in dsh web and exposes its components', async (t) => {
   const authFetch = await makeAuthenticatedFetch(t)
   const page = await authFetch('/', { headers: { accept: 'text/html' } })
@@ -125,15 +141,9 @@ test('loaded plugin survives in dsh web and exposes its components', async (t) =
   }
   const html = await page.text()
 
-  // The page serializes each client bundle as a flat JSON entry:
-  // {"id":"@royenheart/dsh-plugin-opencode-omo","url":"/plugins/??.../client.js&rev=...","rev":"...","inject":[...]}
-  const entryPattern = new RegExp(
-    `\\{"id":"${PACKAGE_ID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}","url":"([^"]+)","rev":"([^"]+)","inject":(\\[[^\\]]*\\])`,
-  )
-  const match = html.match(entryPattern)
-  assert.ok(match, `page does not advertise the ${PACKAGE_ID} client bundle`)
-
-  const bundlePath = match[1]
+  const entry = bootEntry(html, PACKAGE_ID)
+  const bundlePath = entry.url
+  assert.equal(typeof bundlePath, 'string', `boot entry for ${PACKAGE_ID} has no bundle URL`)
   const bundle = await authFetch(bundlePath, { headers: { accept: '*/*' } })
   assert.ok(bundle !== null && bundle.ok, `client bundle fetch failed: ${DSH_WEB_URL}${bundlePath}`)
   const code = await bundle.text()
@@ -145,40 +155,7 @@ test('loaded plugin survives in dsh web and exposes its components', async (t) =
   assert.equal(typeof exportsObj.RoleSettingsSection, 'function')
   const inject = exportsObj.inject
   assert.ok(Array.isArray(inject), 'client inject is an array')
-  assert.ok(inject.includes('settingsScope'), 'client inject includes settingsScope')
-  assert.ok(inject.includes('connection'), 'client inject includes connection')
-})
-
-test('authenticated opencode-omo RPC channel is registered in dsh web', async (t) => {
-  const authFetch = await makeAuthenticatedFetch(t)
-  const page = await authFetch('/', { headers: { accept: 'text/html' } })
-  if (page === null || !page.ok) {
-    t.skip(`dsh web page not reachable at ${DSH_WEB_URL}`)
-    return
-  }
-  const envelope = {
-    type: 'client-request',
-    rpcId: `e2e-${Date.now()}`,
-    method: RPC_ENDPOINT,
-    payload: {},
-  }
-  const response = await authFetch(`${RPC_CHANNEL}/${RPC_ENDPOINT}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(envelope),
-  })
-  if (response === null) {
-    t.skip(`dsh web not reachable at ${DSH_WEB_URL}`)
-    return
-  }
-  assert.ok(
-    response.status === 200 || response.status === 401,
-    `RPC channel responded ${response.status}, expected 200 (authenticated) or 401 (registered but unauthenticated)`,
-  )
-  if (response.status === 200) {
-    const body = await response.json()
-    assert.equal(body.type, 'server-response')
-    assert.equal(body.rpcId, envelope.rpcId)
-    assert.equal(body.result.ok, true)
-  }
+  assert.ok(inject.includes('configForms'), 'client inject includes configForms')
+  assert.ok(!inject.includes('settingsScope'), 'retired settingsScope transport is gone')
+  assert.ok(!inject.includes('connection'), 'retired private connection RPC is gone')
 })
