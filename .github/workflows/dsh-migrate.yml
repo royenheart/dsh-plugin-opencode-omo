@@ -10,12 +10,12 @@ on:
     - cron: '0 13 * * 2'
   workflow_dispatch:
     inputs:
-      target:
-        description: Target release (empty = the configured one)
+      dsh_release:
+        description: dsh release to migrate the plugins to, such as 0.2.1-rc.2 (empty = the target in .github/dsh-migrate.yml, by default the newest dsh release)
         required: false
         type: string
-      force:
-        description: Migrate even when the target release was already processed, unless its proposal is still open
+      migrate_again:
+        description: Migrate again to a dsh release this repository was already migrated to, which is skipped otherwise (never while that release's proposal pull request is open)
         required: false
         type: boolean
         default: false
@@ -33,6 +33,6 @@ jobs:
   dsh-migrate:
     uses: royenheart/dsh-migrate-bot/.github/workflows/migrate.yml@v1.0.0-rc.1
     with:
-      target: ${{ inputs.target || '' }}
-      force: ${{ inputs.force || false }}
+      target: ${{ inputs.dsh_release || '' }}
+      force: ${{ inputs.migrate_again || false }}
     secrets: inherit
