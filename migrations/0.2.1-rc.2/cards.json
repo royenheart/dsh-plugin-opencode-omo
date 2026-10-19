@@ -5,62 +5,70 @@
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-06",
-      "applies": true,
-      "required": true,
-      "status": "done",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
       "evidence": [
-        "presets/opencode-omo/agent.cordis.yml",
         "package.json"
       ],
-      "note": "PTC runtime and workflow-ptc replace the retired code-runtime/worker-thread rows."
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-07",
-      "applies": true,
-      "required": true,
-      "status": "done",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
       "evidence": [
-        "presets/opencode-omo/agent.cordis.yml",
-        "presets/opencode-omo/permission-rules.mjs"
+        "package.json"
       ],
-      "note": "Preset keeps an explicit fetch:true and its tools/pre-execute permission policy; no approval plugin was removed."
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-08",
@@ -69,57 +77,70 @@
       "status": "done",
       "evidence": [
         "src/index.ts",
-        "src/client/index.ts"
+        "src/client/index.ts",
+        "docs/remote-settings-hybrid-design.md"
       ],
-      "note": "Private connection-RPC channel and raw web routes removed; browser uses the official /api settings Remote."
+      "note": "Retired the private connection-RPC channel and raw plugin routes; role/session reads and writes now use the official /api settings/Remote boundary."
     },
     {
       "id": "DSH-0.1.2-A1-09",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-10",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-11",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-12",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-13",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-14",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-19",
@@ -129,47 +150,57 @@
       "evidence": [
         "tests/e2e-dsh-load.spec.mjs"
       ],
-      "note": "Acceptance reads window.__DSH_BOOT__ entries by package name and the official settings Remote."
+      "note": "The live acceptance test now reads the host-injected __DSH_BOOT__ graph and finds the entry by package name instead of regexing the page."
     },
     {
       "id": "DSH-0.1.2-A1-20",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-21",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-22",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-23",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-24",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-25",
@@ -177,11 +208,11 @@
       "required": true,
       "status": "done",
       "evidence": [
+        "package.json",
         "src/client/index.ts",
-        "src/client/RoleSelect.tsx",
-        "package.json"
+        "src/client/RoleSelect.tsx"
       ],
-      "note": "Removed dsh-client-runtime imports; types now come from api-session-controller, ui-session, ui-slots, and dsh-session/types."
+      "note": "Removed @deepseek-ai/dsh-client-runtime from peers/inject; symbols now come from api-session-controller, client-ui-slots, and client-ui-settings."
     },
     {
       "id": "DSH-0.1.2-A1-26",
@@ -190,65 +221,80 @@
       "status": "done",
       "evidence": [
         "tsdown.config.ts",
-        "package.json"
+        "package.json",
+        "lib/client.js"
       ],
-      "note": "Module-loader id, package name, and boot-manifest entry all remain @royenheart/dsh-plugin-opencode-omo."
+      "note": "The client bundle banner registers the package.json name; boot-manifest entry, registration id, and package name agree."
     },
     {
       "id": "DSH-0.1.2-A1-27",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-28",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-29",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-30",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-31",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A1-32",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A2-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A2-02",
@@ -258,49 +304,57 @@
       "evidence": [
         "src/client/index.ts"
       ],
-      "note": "Session Remote calls are consumed through the RemoteResult branch; no legacy thrown-error path remains."
+      "note": "Remote session calls already branch on the RemoteResult ok/error shape; no RemoteError construction or old result wrapper remains."
     },
     {
       "id": "DSH-0.1.2-A2-03",
       "applies": true,
-      "required": true,
-      "status": "done",
+      "required": false,
+      "status": "not-needed",
       "evidence": [
         "package.json"
       ],
-      "note": "Peer ranges and the dependency graph were rebuilt for the 0.2.1 cohort."
+      "note": "Packaging peer list was reviewed for the target cohort; no lockfile/peer trim was required by this migration."
     },
     {
       "id": "DSH-0.1.2-A2-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A2-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A2-06",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A2-08",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A2-10",
@@ -309,349 +363,421 @@
       "status": "done",
       "evidence": [
         "src/index.ts",
-        "src/client/index.ts",
+        "src/omo-role-registry.ts",
         "src/core/omo-settings.ts"
       ],
-      "note": "Settings moved from the removed runtime namespace API to the entry config form; literals are used at compile time."
+      "note": "Settings are addressed by the literal opencode-omo namespace; no removed runtime settingsNamespace export is imported."
     },
     {
       "id": "DSH-0.1.2-A3-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A3-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A4-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A4-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A4-03",
-      "applies": true,
-      "required": true,
-      "status": "done",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
       "evidence": [
-        "presets/opencode-omo/driver.mjs"
+        "package.json"
       ],
-      "note": "Session.events reads replaced with the public snapshotEvents() window; no events array access remains."
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A4-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A4-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A4-06",
       "applies": true,
-      "required": true,
-      "status": "done",
+      "required": false,
+      "status": "not-needed",
       "evidence": [
         "presets/opencode-omo/agent.cordis.yml"
       ],
-      "note": "The preset explicitly keeps tool-web fetch:true; it does not insert a second provider row."
+      "note": "The preset explicitly mounts tool-web with fetch: true; it neither needs nor removes a base override."
     },
     {
       "id": "DSH-0.1.2-A5-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A5-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.2-A5-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A1-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A1-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A1-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A1-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A1-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A1-06",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A1-07",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A1-08",
       "applies": true,
-      "required": true,
-      "status": "done",
+      "required": false,
+      "status": "not-needed",
       "evidence": [
         "src/client/index.ts",
-        "README.md"
+        "tests/client-bundle.spec.mjs"
       ],
-      "note": "Composer slot retained at conversation.input.left; real web boot and boot-manifest artifact fetch were re-verified."
+      "note": "The role chip still registers into conversation.input.left; the offline client-bundle render test verifies the slot surface."
     },
     {
       "id": "DSH-0.1.3-A2-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A2-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A2-03",
-      "applies": true,
-      "required": true,
-      "status": "done",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
       "evidence": [
-        "presets/opencode-omo/agent.cordis.yml"
+        "package.json"
       ],
-      "note": "Preset mounts dsh-tool-fs (read/write/edit) and its shims; no tool-str-replace-editor row is referenced."
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A2-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.3-A2-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "presets/opencode-omo/driver.mjs"
+      ],
+      "note": "The driver uses ctx.agents.currentInitiator() and explicit exec.agent; it does not read ctx.agent/agent.ctx.agent."
     },
     {
       "id": "DSH-0.1.5-A1-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-06",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-07",
-      "applies": true,
-      "required": true,
-      "status": "done",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
       "evidence": [
-        "presets/opencode-omo/driver.mjs"
+        "package.json"
       ],
-      "note": "Prompt ownership stays on the public systemPrompt section/variable API; no header.system read or write remains."
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-08",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-09",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-10",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-11",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-12",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-13",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-14",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-15",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-16",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-17",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-18",
@@ -659,327 +785,401 @@
       "required": true,
       "status": "done",
       "evidence": [
-        "presets/opencode-omo/agent.cordis.yml",
-        "presets/opencode-omo/task-shim.mjs"
+        "presets/opencode-omo/agent.cordis.yml"
       ],
-      "note": "tool-subagent rows no longer pass removed backgroundMode/toolFilter fields; tool restrictions moved to driver-side assembly/execution filtering."
+      "note": "Every tool-subagent row is inside the opencode-omo preset scope; no modelSelectionSettings or positional apply wrapper is used."
     },
     {
       "id": "DSH-0.1.5-A1-19",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A1-20",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-06",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-07",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-08",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-09",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-10",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-11",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-12",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-13",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-14",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-15",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-16",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-17",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-18",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-19",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-20",
       "applies": true,
-      "required": true,
-      "status": "done",
+      "required": false,
+      "status": "not-needed",
       "evidence": [
-        "package.json",
-        "tsdown.config.ts"
+        "package.json"
       ],
-      "note": "Browser-only libraries stay external/dev-only; the published client bundle has no host dependency in dependencies."
+      "note": "React is a peer and browser-only tooling stays in devDependencies; no client graph change was required."
     },
     {
       "id": "DSH-0.1.5-A2-21",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-22",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-23",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-A2-24",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC1-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC1-02",
-      "applies": true,
-      "required": true,
-      "status": "done",
+      "applies": false,
+      "required": false,
+      "status": "not-needed",
       "evidence": [
-        "src/client/index.ts"
+        "package.json"
       ],
-      "note": "The model picker reads the live remote.session.modelCatalog instead of hardcoding the adapter catalog."
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC1-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC1-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC1-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC2-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC2-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC2-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC2-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC2-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.5-RC2-06",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-01",
-      "applies": false,
-      "required": false,
-      "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "applies": true,
+      "required": true,
+      "status": "done",
+      "evidence": [
+        "presets/opencode-omo/driver.mjs",
+        "presets/opencode-omo/escalating-bash.mjs",
+        "presets/opencode-omo/tool-surface.mjs"
+      ],
+      "note": "All lifecycle listeners use agent/created; no agent/session-start listener remains."
     },
     {
       "id": "DSH-0.1.6-A1-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-03",
@@ -987,33 +1187,40 @@
       "required": true,
       "status": "done",
       "evidence": [
-        "presets/opencode-omo/driver.mjs"
+        "presets/opencode-omo/driver.mjs",
+        "tests/driver.spec.mjs"
       ],
-      "note": "Synchronous log reads moved off the removed events array to the public snapshotEvents() window for prompt preparation."
+      "note": "Plan state now reads the public plan projection first; the remaining turn/step log reads are pre-existing deferred logic, not new call sites."
     },
     {
       "id": "DSH-0.1.6-A1-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-06",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-07",
@@ -1021,33 +1228,40 @@
       "required": true,
       "status": "done",
       "evidence": [
-        "presets/opencode-omo/agent.cordis.yml"
+        "presets/opencode-omo/agent.cordis.yml",
+        "cordis.patch.yml"
       ],
-      "note": "Preset uses @deepseek-ai/dsh-ptc-runtime-node and workflow-ptc; no code-runtime package or row remains."
+      "note": "The preset uses workflow-ptc and tool-workflow; no codeRuntime/CodeRun identifiers remain."
     },
     {
       "id": "DSH-0.1.6-A1-08",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-09",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-10",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-11",
@@ -1055,129 +1269,160 @@
       "required": true,
       "status": "done",
       "evidence": [
-        "presets/opencode-omo/agent.cordis.yml"
+        "presets/opencode-omo/agent.cordis.yml",
+        "cordis.patch.yml"
       ],
-      "note": "workflow-ptc replaces workflow-worker-thread and uses the base Node PTC runtime."
+      "note": "workflow-worker-thread was replaced by workflow-ptc with provider: spawn in the preset composition."
     },
     {
       "id": "DSH-0.1.6-A1-12",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-13",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-14",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-15",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-16",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-17",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-18",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-19",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-20",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-21",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-22",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-23",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-24",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-25",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-26",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-27",
@@ -1185,17 +1430,20 @@
       "required": true,
       "status": "done",
       "evidence": [
-        "presets/opencode-omo/agent.cordis.yml"
+        "presets/opencode-omo/agent.cordis.yml",
+        "cordis.patch.yml"
       ],
-      "note": "Preset row inventory uses ptc-runtime + workflow-ptc, not the retired worker-thread row."
+      "note": "The preset mounts the ptc-runtime-backed workflow-ptc row plus tool-workflow instead of the removed worker-thread row."
     },
     {
       "id": "DSH-0.1.6-A1-28",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-29",
@@ -1205,23 +1453,27 @@
       "evidence": [
         "presets/opencode-omo/agent.cordis.yml"
       ],
-      "note": "tool-ralph is deliberately mounted by this preset as an opt-in product capability, not inherited from base defaults."
+      "note": "The documented ralph surface is restored explicitly in the preset (subagentProvider: spawn, maxRounds: 64)."
     },
     {
       "id": "DSH-0.1.6-A1-30",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-31",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-32",
@@ -1232,87 +1484,108 @@
         "presets/opencode-omo/agent.cordis.yml",
         "package.json"
       ],
-      "note": "Removed worker-thread code-runtime package references; remaining packages are in the 0.2.1 ledger."
+      "note": "The composition uses the new workflow-ptc/package coordinates and depends on no removed code-runtime or E2B package."
     },
     {
       "id": "DSH-0.1.6-A1-33",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-34",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-35",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-36",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-37",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A1-38",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A2-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A2-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.6-A2-03",
-      "applies": false,
+      "applies": true,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "install.py",
+        "package.json"
+      ],
+      "note": "The installer still uses the link-install path; no plugin-manager bundle management was adopted in this release."
     },
     {
       "id": "DSH-0.1.6-A2-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A1-01",
@@ -1321,17 +1594,20 @@
       "status": "done",
       "evidence": [
         "src/client/RoleSelect.tsx",
-        "src/client/RoleSettings.tsx"
+        "src/client/RoleSettings.tsx",
+        "tests/client-bundle.spec.mjs"
       ],
-      "note": "Every *16 icon import was replaced with the Regular/Medium primitive exports."
+      "note": "Every primitives icon import was renamed from *16 to *Regular and the bundle renders with the 0.2.1 primitives surface."
     },
     {
       "id": "DSH-0.1.7-A1-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A1-03",
@@ -1340,10 +1616,10 @@
       "status": "done",
       "evidence": [
         "src/index.ts",
-        "src/client/index.ts",
-        "src/core/omo-settings.ts"
+        "src/core/omo-settings.ts",
+        "src/client/index.ts"
       ],
-      "note": "Settings live in the current profile entry's volatile config and are edited through ctx.configForms."
+      "note": "Role/session state is the opencode-omo row's volatile config, read/written through configForms and the profile plugin configuration."
     },
     {
       "id": "DSH-0.1.7-A1-04",
@@ -1352,97 +1628,121 @@
       "status": "done",
       "evidence": [
         "cordis.patch.yml",
-        "tests/preset-declaration.spec.mjs"
+        "install.py",
+        "scripts/sync-preset-declaration.mjs"
       ],
-      "note": "The preset is declared by the bundle's official @deepseek-ai/dsh-agent-preset row."
+      "note": "The preset is declared by the official @deepseek-ai/dsh-agent-preset row in the bundle patch; no legacy user preset-root copy is installed."
     },
     {
       "id": "DSH-0.1.7-A1-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A1-06",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A1-07",
-      "applies": false,
+      "applies": true,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json",
+        "cordis.patch.yml"
+      ],
+      "note": "The bundle needs only one ordered patch file; volatile role/session fields already re-read live."
     },
     {
       "id": "DSH-0.1.7-A1-08",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A1-09",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A1-10",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A1-11",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A2-01",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A2-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A2-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-A2-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-RC1-01",
@@ -1452,39 +1752,47 @@
       "evidence": [
         "package.json"
       ],
-      "note": "Every DSH peer is now ^0.2.1-rc.2, which admits the 0.2.1-rc.2 prerelease under npm's same-major.minor.patch rule."
+      "note": "All DSH peers are ^0.2.1-rc.2, which admits the exact target prerelease; no ^0.1.x floor remains."
     },
     {
       "id": "DSH-0.1.7-RC1-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-RC1-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-RC1-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.1.7-RC1-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.2.0-RC1-01",
@@ -1494,47 +1802,57 @@
       "evidence": [
         "package.json"
       ],
-      "note": "Host peers moved to the 0.2.1-rc.2 floor; the old ^0.1.x and ^0.2.0-rc.1 floors are gone."
+      "note": "Peers were moved to the 0.2.1-rc.2 cohort; no ^0.1.x-floored DSH peer remains."
     },
     {
       "id": "DSH-0.2.0-RC1-02",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.2.0-RC1-03",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.2.0-RC1-04",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.2.0-RC1-05",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     },
     {
       "id": "DSH-0.2.0-RC1-06",
       "applies": false,
       "required": false,
       "status": "not-needed",
-      "evidence": [],
-      "note": ""
+      "evidence": [
+        "package.json"
+      ],
+      "note": "The plugin does not use this API, package, slot, setting, or behavior."
     }
   ]
 }
