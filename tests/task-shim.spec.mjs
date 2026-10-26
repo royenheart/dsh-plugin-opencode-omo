@@ -11,6 +11,7 @@ import {
   KNOWN_SUBAGENT_TYPES,
   renderLoadedSkills,
   resolveTaskRoute,
+  runOutcome,
   roleForDelegationCall,
   SUBAGENT_TYPE_DEFS,
   SUBAGENT_TYPE_TO_ROLE,
@@ -29,6 +30,15 @@ test('renderLoadedSkills renders the exact <loaded_skills> child-prompt prefix',
       + 'Load and follow these skills first via the skill tool: frontend, ulw-plan.\n'
       + '</loaded_skills>\n',
   )
+})
+
+test('background outcomes use the 0.2.1 result field', () => {
+  assert.deepEqual(
+    runOutcome({ stopReason: 'completed', output: [{ type: 'text', text: 'PONG' }] }),
+    { status: 'completed', result: 'PONG' },
+  )
+  assert.deepEqual(runOutcome({ stopReason: 'aborted' }), { status: 'killed' })
+  assert.deepEqual(runOutcome({ stopReason: 'max-tokens' }), { status: 'failed', detail: 'max-tokens' })
 })
 
 test('resolveTaskRoute prefers task_id over every other routing input', () => {

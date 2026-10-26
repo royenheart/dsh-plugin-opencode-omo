@@ -378,10 +378,13 @@ async function settleForegroundRun(activation) {
 }
 
 /** Map a settled activation to the `ctx.jobs` outcome shape. */
-function runOutcome(result) {
+export function runOutcome(result) {
   switch (result?.stopReason) {
     case 'completed':
-      return { status: 'completed', output: textBlocks(result.output) }
+      // dsh 0.2.1 took the former JobOutcome.output string under `result`;
+      // jobs-local stores only outcome.result, so keeping `output` drops the
+      // background subagent's final report.
+      return { status: 'completed', result: textBlocks(result.output) }
     case 'aborted':
       return { status: 'killed' }
     case 'error':
