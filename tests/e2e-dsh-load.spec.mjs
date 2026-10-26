@@ -142,8 +142,9 @@ test('loaded plugin survives in dsh web and exposes its components', async (t) =
   const html = await page.text()
 
   const entry = bootEntry(html, PACKAGE_ID)
-  const bundlePath = entry.url
-  assert.equal(typeof bundlePath, 'string', `boot entry for ${PACKAGE_ID} has no bundle URL`)
+  assert.equal(typeof entry.url, 'string', `boot entry for ${PACKAGE_ID} has no bundle URL`)
+  // The boot manifest may advertise either an absolute or a root-relative URL.
+  const bundlePath = entry.url.startsWith('/') ? entry.url : `/${entry.url}`
   const bundle = await authFetch(bundlePath, { headers: { accept: '*/*' } })
   assert.ok(bundle !== null && bundle.ok, `client bundle fetch failed: ${DSH_WEB_URL}${bundlePath}`)
   const code = await bundle.text()
