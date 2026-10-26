@@ -12,6 +12,7 @@
 // call_omo_agent / task live in task-shim.mjs and share the same execute path.
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { isDelegatedSession } from './delegated-session.mjs'
 
 export const name = 'opencode-omo-delegation-surface'
 export const inject = ['tools', 'jobs']
@@ -54,9 +55,18 @@ export function fromOmoTaskId(id) {
   return { kind: 'raw', id: value }
 }
 
-export function applyOmoDelegationCatalog(tools) {
+export function applyOmoDelegationCatalog(tools, options = {}) {
   if (!Array.isArray(tools)) return tools
-  return tools.filter(tool => tool && typeof tool.name === 'string' && !HIDDEN.has(tool.name))
+  const allowSendMessage = options.allowSendMessage === true
+  return tools.filter(tool => {
+    if (!tool || typeof tool.name !== 'string') return false
+    if (!HIDDEN.has(tool.name)) return true
+    // dsh's continuable-subagent return path tells every child to call
+    // send_message; the primary surface keeps omo's task()/background_output
+    // entry points. Hiding send_message from a child leaves that instruction
+    // pointing at a tool the child cannot see.
+    return allowSendMessage && tool.name === 'send_message'
+  })
 }
 
 /** Rewrite dsh `tool:jobs` section copy into the omo collection names. */
@@ -117,7 +127,7 @@ function presentJob(job) {
 }
 
 export function apply(ctx) {
-  ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
+  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const transformed = await next()
     const sections = Array.isArray(transformed.sections)
       ? transformed.sections.map((section) => {
@@ -128,7 +138,9 @@ export function apply(ctx) {
     return {
       ...transformed,
       sections,
-      tools: applyOmoDelegationCatalog(transformed.tools),
+      tools: applyOmoDelegationCatalog(transformed.tools, {
+        allowSendMessage: isDelegatedSession(context.agent),
+      }),
     }
   })
 
@@ -143,6 +155,9 @@ export function apply(ctx) {
 
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (HIDDEN.has(exec.name)) {
+      // Children need dsh's return channel; the primary surface still hides it
+      // so omo's task()/background_output interface stays the only entry point.
+      if (exec.name === 'send_message' && isDelegatedSession(exec)) return next()
       return {
         kind: 'deny',
         reason:

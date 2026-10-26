@@ -12,6 +12,9 @@
 // Every other allow/deny rule is already enforced by dsh-native sandbox policy,
 // the driver's named-role restriction map, and the driver's model-family tool gate.
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isDelegatedSession } from './delegated-session.mjs'
+
+export { isDelegatedSession }
 
 export const name = 'opencode-omo-permission-rules'
 
@@ -72,17 +75,6 @@ export function externalDirectoryReason(exec) {
   if (path === undefined) return undefined
   if (!outsideWorkspace(path, workspaceRoot(exec))) return undefined
   return `opencode-omo: "${exec.name}" would access a path outside the workspace root and requires approval (opencode external_directory: ask)`
-}
-
-/**
- * True for in-process delegated children. dsh stamps `origin: 'subagent'` and
- * a positive `delegationDepth` on the child session header; either is enough.
- */
-export function isDelegatedSession(exec) {
-  const header = exec.agent?.session?.header
-  if (header == null) return false
-  if (header.origin === 'subagent') return true
-  return typeof header.delegationDepth === 'number' && header.delegationDepth >= 1
 }
 
 /**

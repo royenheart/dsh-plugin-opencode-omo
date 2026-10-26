@@ -21,6 +21,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { applyOmoDelegationCatalog } from './delegation-surface.mjs'
+import { isDelegatedSession } from './delegated-session.mjs'
 import { applyOmoLspCatalog } from './lsp-surface.mjs'
 import { renderRulesFor } from './rules.mjs'
 import { roleForDelegationCall, toolRestrictionForDelegation } from './task-shim.mjs'
@@ -655,17 +656,21 @@ function opencodeUsesPatch(model) {
     && !model.includes('gpt-4')
 }
 
-function opencodeTools(tools, model, restriction) {
+function opencodeTools(tools, model, restriction, allowSendMessage = false) {
+  if (!Array.isArray(tools)) return tools
   const usePatch = opencodeUsesPatch(model)
-  return applyOmoLspCatalog(applyOmoDelegationCatalog(tools)).filter(tool => {
+  return applyOmoLspCatalog(applyOmoDelegationCatalog(tools, { allowSendMessage })).filter(tool => {
     if (tool.name === 'apply_patch') return usePatch
     if (tool.name === 'edit' || tool.name === 'write') return !usePatch
-    return toolAllowed(tool.name, restriction)
+    return toolAllowed(tool.name, restriction, allowSendMessage)
   })
 }
 
 /** Whether one tool name survives a delegated child's inherited restriction. */
-function toolAllowed(name, restriction) {
+function toolAllowed(name, restriction, allowSendMessage = false) {
+  // Children must be able to return their result even when the role's allow
+  // list is narrow (multimodal-looker keeps only read/read_image).
+  if (allowSendMessage && name === 'send_message') return true
   if (restriction === undefined) return true
   if (Array.isArray(restriction.allow)) return restriction.allow.includes(name)
   if (Array.isArray(restriction.deny)) return !restriction.deny.includes(name)
@@ -673,8 +678,8 @@ function toolAllowed(name, restriction) {
 }
 
 /** Execution-side counterpart of the prompt-side gate (model-visible tools only). */
-function gateToolCall(name, model, restriction) {
-  if (!toolAllowed(name, restriction)) {
+function gateToolCall(name, model, restriction, allowSendMessage = false) {
+  if (!toolAllowed(name, restriction, allowSendMessage)) {
     return `opencode-omo: "${name}" is not available to this delegated role`
   }
   const usePatch = opencodeUsesPatch(model)
@@ -778,7 +783,10 @@ function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
   const session = agent.session
   const role = omoRoles?.roleFor?.(session.id) ?? 'sisyphus'
   const restriction = restrictionFor(agent)
-  const tools = schemasFor(ctx, agent).filter(tool => toolAllowed(tool?.name, restriction))
+  // The tool table is model-facing prose the model uses to choose calls; it
+  // must match the request catalog exactly. opencodeTools applies the same
+  // hidden-name, model-family, and role-restriction filters as assembly.
+  const tools = opencodeTools(schemasFor(ctx, agent), model, restriction, isDelegatedSession(agent))
   // The prompt family must follow the model this step actually routes to, not
   // the session's previous route (omo re-bakes the prompt for the live model).
   const roleSystem = rolePromptFor(role, model, tools)
@@ -1074,7 +1082,12 @@ export function apply(ctx) {
     transformed.variables.opencode_omo_prompt = renderOmoPrompt(
       ctx, omoRoles, state, agent, route.provider, route.model,
     )
-    return { ...transformed, tools: opencodeTools(transformed.tools, route.model, restrictionFor(agent)) }
+    return {
+      ...transformed,
+      tools: opencodeTools(
+        transformed.tools, route.model, restrictionFor(agent), isDelegatedSession(agent),
+      ),
+    }
   }, { prepend: true })
 
   // Request-only assistant tail for opencode's MAX_STEPS_PROMPT. The patched
@@ -1094,7 +1107,7 @@ export function apply(ctx) {
     if (exec.agent === undefined) return next()
     const reason = gateToolCall(exec.name, currentRouteModel(
       stateFor(exec.agent), exec.agent.session, exec.agent,
-    ), restrictionFor(exec.agent))
+    ), restrictionFor(exec.agent), isDelegatedSession(exec))
     if (reason !== undefined) return { kind: 'deny', reason }
     return next()
   })

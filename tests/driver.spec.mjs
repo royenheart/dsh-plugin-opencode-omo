@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fallbackRetryable, gateToolCall, opencodeUsesPatch, persistPlanFile, systemPromptFor } from '../presets/opencode-omo/driver.mjs'
+import { fallbackRetryable, gateToolCall, opencodeTools, opencodeUsesPatch, persistPlanFile, systemPromptFor } from '../presets/opencode-omo/driver.mjs'
 import { renderRulesFor } from '../presets/opencode-omo/rules.mjs'
 
 function roleFace(role = 'sisyphus') {
@@ -140,6 +140,79 @@ test('approved plans persist at the opencode path and feed the build-switch remi
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
+})
+
+test('request catalog applies hidden, model-family, and child send_message filters', () => {
+  const tools = [
+    { name: 'task' },
+    { name: 'list_agents' },
+    { name: 'subagent' },
+    { name: 'apply_patch' },
+    { name: 'edit' },
+    { name: 'send_message' },
+  ]
+  assert.deepEqual(opencodeTools(tools, 'deepseek-v4').map(tool => tool.name), ['task', 'edit'])
+  assert.deepEqual(opencodeTools(tools, 'gpt-5.5').map(tool => tool.name), ['task', 'apply_patch'])
+  assert.deepEqual(
+    opencodeTools(tools, 'deepseek-v4', undefined, true).map(tool => tool.name),
+    ['task', 'edit', 'send_message'],
+  )
+  assert.equal(opencodeTools(undefined, 'deepseek-v4'), undefined)
+})
+
+test('prompt tool table never advertises tools the request catalog hides', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-prompt-table-'))
+  try {
+    const ctx = {
+      tools: {
+        schemas: () => [
+          { name: 'task', description: 'delegate' },
+          { name: 'list_agents', description: 'hidden' },
+          { name: 'apply_patch', description: 'patch' },
+          { name: 'edit', description: 'edit' },
+          { name: 'send_message', description: 'message' },
+        ],
+      },
+    }
+    const prompt = systemPromptFor(ctx, roleFace(), mockState(), mockAgent(cwd, [], 'deepseek-v4'))
+    assert.match(prompt, /\| task \|/)
+    assert.match(prompt, /\| edit \|/)
+    assert.doesNotMatch(prompt, /\| list_agents \|/)
+    assert.doesNotMatch(prompt, /\| apply_patch \|/)
+    assert.doesNotMatch(prompt, /\| send_message \|/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('delegated child prompt table includes the dsh return channel', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-child-table-'))
+  try {
+    const ctx = {
+      tools: {
+        schemas: () => [
+          { name: 'task', description: 'delegate' },
+          { name: 'list_agents', description: 'hidden' },
+          { name: 'send_message', description: 'message' },
+        ],
+      },
+    }
+    const agent = mockAgent(cwd, [], 'deepseek-v4')
+    agent.session.header.origin = 'subagent'
+    const prompt = systemPromptFor(ctx, roleFace(), mockState(), agent)
+    assert.match(prompt, /\| send_message \|/)
+    assert.doesNotMatch(prompt, /\| list_agents \|/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('send_message survives a narrow child allow list but not the primary gate', () => {
+  assert.equal(gateToolCall('send_message', 'deepseek-v4', { allow: ['read', 'read_image'] }, true), undefined)
+  assert.match(
+    gateToolCall('send_message', 'deepseek-v4', { allow: ['read', 'read_image'] }, false),
+    /not available to this delegated role/,
+  )
 })
 
 test('fallback advances only on omo-style retryable failure codes', () => {

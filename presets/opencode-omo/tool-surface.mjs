@@ -11,6 +11,7 @@ import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
 import { defineTool, parameterSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
 import { ESCALATION_GUIDANCE, ESCALATION_PARAMETERS, escalationAvailableFor } from './escalating-bash.mjs'
 import { applyOmoDelegationCatalog } from './delegation-surface.mjs'
+import { isDelegatedSession } from './delegated-session.mjs'
 import { applyOmoLspCatalog } from './lsp-surface.mjs'
 
 export const name = 'opencode-omo-tool-surface'
@@ -635,7 +636,10 @@ export function apply(ctx) {
     if (context.agent !== undefined) ensureShimsFor(ctx, context.agent)
     return {
       ...transformed,
-      tools: applyOmoLspCatalog(applyOmoDelegationCatalog(applyOpencodeSurface(transformed.tools, { bashEscalation }))),
+      tools: applyOmoLspCatalog(applyOmoDelegationCatalog(
+        applyOpencodeSurface(transformed.tools, { bashEscalation }),
+        { allowSendMessage: isDelegatedSession(context.agent) },
+      )),
     }
   })
 }

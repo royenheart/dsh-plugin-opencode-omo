@@ -103,6 +103,38 @@ test('applyOmoDelegationCatalog drops hidden dsh execution-layer names', () => {
   assert.deepEqual(catalog, [kept, { name: 'oracle' }])
 })
 
+test('applyOmoDelegationCatalog keeps send_message only for delegated children', () => {
+  const tools = [
+    { name: 'task' },
+    { name: 'send_message' },
+    { name: 'list_agents' },
+    { name: 'job_list' },
+  ]
+  assert.deepEqual(applyOmoDelegationCatalog(tools).map(tool => tool.name), ['task'])
+  assert.deepEqual(
+    applyOmoDelegationCatalog(tools, { allowSendMessage: true }).map(tool => tool.name),
+    ['task', 'send_message'],
+  )
+})
+
+test('send_message pre-execute is allowed for a delegated child and denied for the primary', async () => {
+  const listeners = new Map()
+  const ctx = {
+    jobs: {},
+    tools: { register() {} },
+    on(event, listener) { listeners.set(event, listener) },
+  }
+  apply(ctx)
+  const listener = listeners.get('tools/pre-execute')
+  const next = () => Promise.resolve({ kind: 'accept' })
+  const childExec = { name: 'send_message', agent: { session: { header: { origin: 'subagent' } } } }
+  assert.deepEqual(await listener(childExec, next), { kind: 'accept' })
+  const primaryExec = { name: 'send_message', agent: { session: { header: {} } } }
+  assert.equal((await listener(primaryExec, next)).kind, 'deny')
+  const hiddenExec = { name: 'list_agents', agent: { session: { header: { delegationDepth: 1 } } } }
+  assert.equal((await listener(hiddenExec, next)).kind, 'deny')
+})
+
 function mockDelegationCtx(jobs) {
   const registered = new Map()
   return {
