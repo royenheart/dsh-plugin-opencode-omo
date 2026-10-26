@@ -135,6 +135,24 @@ test('send_message pre-execute is allowed for a delegated child and denied for t
   assert.equal((await listener(hiddenExec, next)).kind, 'deny')
 })
 
+test('background_output appends the producer terminal result', async () => {
+  const ctx = mockDelegationCtx({
+    read(id) {
+      return {
+        chunks: [],
+        job: { id, status: 'completed' },
+        ...(id === 'job-result' ? { result: 'RESULT' } : {}),
+      }
+    },
+  })
+  apply(ctx)
+  const tool = ctx.registered.get('background_output')
+  const collected = await tool.execute({ task_id: 'bg_job-result' }, { agent: {} })
+  assert.equal(collected.text, 'RESULT')
+  assert.equal(collected.status, 'completed')
+  assert.equal(collected.task_id, 'bg_job-result')
+})
+
 function mockDelegationCtx(jobs) {
   const registered = new Map()
   return {
