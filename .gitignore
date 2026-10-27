@@ -238,3 +238,5 @@ __marimo__/
 tmp
 tests/benches/solution.py
 tests/benches/cwd-check.txt
+
+.review-worktrees/
