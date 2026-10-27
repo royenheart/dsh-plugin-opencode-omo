@@ -17,8 +17,9 @@ Usage:
 
 Requires the Python standard library plus Node.js/npm. Built bundles are not
 versioned: `install.py` always builds the repository's own toolchain
-(`npm install` when needed, then `npm run build`) before installing; only a
-missing npm reports an error instead of continuing.
+(`npm ci` when the toolchain is missing or package-lock.json is newer, then
+`npm run build`) before installing; missing npm, a failed install/build,
+missing artifacts, or missing harness links report an actionable error.
 """
 
 import argparse
@@ -110,25 +111,30 @@ def ensure_built(root: Path) -> None:
 
     `lib/` is generated locally and never versioned, so `install.py` always
     runs the package's own build instead of trusting whatever files happen to
-    exist. `npm install` provisions the dev toolchain only when it is missing;
-    a machine without npm reports an actionable error instead of continuing.
+    exist. `npm ci` runs when the toolchain is missing or package-lock.json is
+    newer than the installed lock; a machine without npm reports an actionable
+    error instead of continuing.
     """
     npm = shutil.which("npm")
     if npm is None:
         raise SystemExit(
             "npm is not on PATH - install Node.js/npm, then run "
-            "`npm install && npm run build` inside " + str(root)
+            "`npm ci && npm run build` inside " + str(root)
         )
     try:
-        if not (root / "node_modules" / ".bin" / "tsc").exists() or not (root / "node_modules" / ".bin" / "tsdown").exists():
-            print("installing the repository's own toolchain (npm install)...")
-            subprocess.run([npm, "install"], cwd=root, check=True)
+        installed_lock = root / "node_modules" / ".package-lock.json"
+        package_lock = root / "package-lock.json"
+        toolchain_missing = not (root / "node_modules" / ".bin" / "tsc").exists() or not (root / "node_modules" / ".bin" / "tsdown").exists()
+        lock_newer = package_lock.exists() and (not installed_lock.exists() or package_lock.stat().st_mtime > installed_lock.stat().st_mtime)
+        if toolchain_missing or lock_newer:
+            print("installing the repository's own toolchain (npm ci)...")
+            subprocess.run([npm, "ci"], cwd=root, check=True)
         print("building host/client bundles (npm run build)...")
         subprocess.run([npm, "run", "build"], cwd=root, check=True)
     except subprocess.CalledProcessError as error:
         raise SystemExit(
-            "build failed (npm exit " + str(error.returncode) + ") - "
-            "run `npm install` and `npm run build` inside " + str(root) + " to see the diagnostics"
+            "dependency install/build failed (npm exit " + str(error.returncode) + ") - "
+            "run `npm ci` and `npm run build` inside " + str(root) + " to see the diagnostics"
         ) from error
     required = [root / "lib" / "index.js", root / "lib" / "client.js"]
     missing = [str(path) for path in required if not path.exists()]
