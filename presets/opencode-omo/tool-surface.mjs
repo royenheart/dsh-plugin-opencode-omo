@@ -116,9 +116,30 @@ function sessionResolveOptions(exec, requestedPath) {
   return { cwd: canonicalPath(cwd), signal: exec.signal }
 }
 
+async function workingDirectoryResolveOptions(ctx, exec, requestedPath) {
+  let service
+  try {
+    service = ctx.get?.('workingDirectory')
+  } catch {
+    service = undefined
+  }
+  if (service !== undefined && typeof service.ensure === 'function' && exec.agent !== undefined) {
+    try {
+      const cwd = await service.ensure(exec.agent, exec.signal)
+      if (typeof cwd === 'string' && cwd !== '') {
+        if (!PARENT_PATH_SEGMENT.test(requestedPath)) return { cwd, signal: exec.signal }
+        return { cwd: canonicalPath(cwd), signal: exec.signal }
+      }
+    } catch {
+      // Fall back to the header anchor when the service cannot resolve.
+    }
+  }
+  return sessionResolveOptions(exec, requestedPath)
+}
+
 async function resolveImageReadTarget(ctx, exec, requestedPath) {
   const fs = ctx.get('fs')
-  const target = await fs.resolve(requestedPath, sessionResolveOptions(exec, requestedPath))
+  const target = await fs.resolve(requestedPath, await workingDirectoryResolveOptions(ctx, exec, requestedPath))
   const info = await fs.stat(target, exec.signal)
   if (info === undefined) {
     ctx.emit('fs/observed', target, { kind: 'absent' }, exec)
@@ -386,7 +407,7 @@ async function listDirectoryIfNeeded(ctx, converted, exec) {
   if (typeof requested !== 'string' || requested.trim() === '') return undefined
   const fs = ctx.get('fs')
   if (fs === undefined || typeof fs.listDir !== 'function') return undefined
-  const target = await fs.resolve(requested, sessionResolveOptions(exec, requested))
+  const target = await fs.resolve(requested, await workingDirectoryResolveOptions(ctx, exec, requested))
   const info = await fs.stat(target, exec.signal)
   if (info === undefined || info.type !== 'directory') return undefined
   const children = await fs.listDir(target, exec.signal)

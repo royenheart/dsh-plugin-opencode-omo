@@ -102,7 +102,7 @@ export function rewriteJobCompletionNotice(text) {
 }
 
 function rewriteJobNoticeMessage(message) {
-  if (message?.source?.plugin !== 'tool-jobs' || message.source.form !== 'notice') return message
+  if (message?.source?.kind !== 'tool-jobs' || message.source.form !== 'notice') return message
   const blocks = Array.isArray(message.content) ? message.content : []
   let changed = false
   const content = blocks.map((block) => {

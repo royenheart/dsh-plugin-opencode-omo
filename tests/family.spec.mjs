@@ -82,7 +82,7 @@ test('familyFileFor matches omo resolveSisyphusPromptFamily', () => {
 })
 
 test('assembled Sisyphus prompt uses the new opus-5 and grok families', () => {
-  const ctx = { tools: { schemas: () => [] } }
+  const ctx = { tools: { schemas: () => [{ name: 'task', description: 'delegate' }] } }
   const state = { fallbackAttempts: new Map(), resolvedRoutes: new Map(), lastRouteTurn: 0, ultraworkTurn: 0 }
   const opus5 = systemPromptFor(ctx, roleFace(), state, mockAgent('claude-opus-5'))
   assert.match(opus5, /Claude Opus 5/)
