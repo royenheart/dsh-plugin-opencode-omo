@@ -84,14 +84,14 @@ Should I proceed with [recommendation], or would you prefer differently?
 **IMMEDIATELY after understanding the request, create todos:**
 
 \`\`\`
-TodoWrite([
-  {"id": "phase-1", "content": "PHASE 1: Codebase Analysis - launch parallel explore agents", "status": "pending", "priority": "high"},
-  {"id": "phase-2", "content": "PHASE 2: Build Codemap - map dependencies and impact zones", "status": "pending", "priority": "high"},
-  {"id": "phase-3", "content": "PHASE 3: Test Assessment - analyze test coverage and verification strategy", "status": "pending", "priority": "high"},
-  {"id": "phase-4", "content": "PHASE 4: Plan Generation - invoke Plan agent for detailed refactoring plan", "status": "pending", "priority": "high"},
-  {"id": "phase-5", "content": "PHASE 5: Execute Refactoring - step-by-step with continuous verification", "status": "pending", "priority": "high"},
-  {"id": "phase-6", "content": "PHASE 6: Final Verification - full test suite and regression check", "status": "pending", "priority": "high"}
-])
+todo_write({ "todos": [
+  { "content": "PHASE 1: Codebase Analysis - launch parallel explore agents", "status": "pending" },
+  { "content": "PHASE 2: Build Codemap - map dependencies and impact zones", "status": "pending" },
+  { "content": "PHASE 3: Test Assessment - analyze test coverage and verification strategy", "status": "pending" },
+  { "content": "PHASE 4: Plan Generation - invoke Plan agent for detailed refactoring plan", "status": "pending" },
+  { "content": "PHASE 5: Execute Refactoring - step-by-step with continuous verification", "status": "pending" },
+  { "content": "PHASE 6: Final Verification - full test suite and regression check", "status": "pending" },
+] })
 \`\`\`
 
 ---
@@ -383,14 +383,15 @@ After receiving plan from Plan agent:
 Convert Plan agent output into granular todos:
 
 \`\`\`
-TodoWrite([
-  // Each step from the plan becomes a todo
-  {"id": "refactor-1", "content": "Step 1: [description]", "status": "pending", "priority": "high"},
-  {"id": "verify-1", "content": "Verify Step 1: run tests", "status": "pending", "priority": "high"},
-  {"id": "refactor-2", "content": "Step 2: [description]", "status": "pending", "priority": "medium"},
-  {"id": "verify-2", "content": "Verify Step 2: run tests", "status": "pending", "priority": "medium"},
-  // ... continue for all steps
-])
+todo_write({ "todos": [
+  { "content": "PHASE 4: Plan Generation - invoke Plan agent for detailed refactoring plan", "status": "in_progress" },
+  { "content": "PHASE 5: Execute Refactoring - step-by-step with continuous verification", "status": "pending" },
+  { "content": "PHASE 6: Final Verification - full test suite and regression check", "status": "pending" },
+  { "content": "Step 1: [description from the plan]", "status": "pending" },
+  { "content": "Verify Step 1: run tests", "status": "pending" },
+  { "content": "Step 2: [description from the plan]", "status": "pending" },
+  { "content": "Verify Step 2: run tests", "status": "pending" },
+] })
 \`\`\`
 
 **Mark phase-4 as completed.**
@@ -626,7 +627,7 @@ export const REFACTOR_TEAM_MODE_ADDENDUM = `
 When invoking the Plan agent in Phase 4.1, ask it to tag each atomic step:
 
 - \`quick\`: mechanical edits — \`lsp_find_references\` then edit (this harness has no \`lsp_rename\`), extract variable, inline, simple move, signature change without call-site logic.
-- \`unspecified-low\`: logic-preserving refactors that need reasoning — extract function, restructure conditional, pattern transformation, cross-file API change.
+- \`deep\`: logic-preserving refactors that need reasoning — extract function, restructure conditional, pattern transformation, cross-file API change.
 
 Recommend a parallel path when \`file_independent_steps >= 3\`; otherwise stay on the original 5.1 / 5.2 / 5.3 flow.
 
@@ -635,11 +636,11 @@ Recommend a parallel path when \`file_independent_steps >= 3\`; otherwise stay o
 For each independent step, fire in one turn:
 
 \`\`\`
-task(category="quick", run_in_background=true, description="refactor step <N>",
+task(category="<quick|deep>", run_in_background=true, description="refactor step <N>",
      prompt=<per-step instructions + target files + line ranges + rollback + Intent Card + verify-spec>)
 \`\`\`
 
-Use \`category="quick"\` for mechanical steps and a generic / \`sisyphus-junior\` spawn for reasoning steps. After each \`<system-reminder>\`, collect with \`background_output(task_id="bg_...")\`, then verify OUTSIDE the worker:
+Use \`category="quick"\` for mechanical steps and \`category="deep"\` for reasoning steps. After each \`<system-reminder>\`, collect with \`background_output(task_id="bg_...")\`, then verify OUTSIDE the worker:
 
 \`\`\`
 task(category="deep", run_in_background=true, description="verify step <N>",

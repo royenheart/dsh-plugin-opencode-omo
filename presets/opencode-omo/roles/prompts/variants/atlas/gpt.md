@@ -75,7 +75,7 @@ task(subagent_type="explore", run_in_background=true, ...)
 Use `task()` with EITHER category OR agent (mutually exclusive):
 
 ```typescript
-// Option A: Category + Skills (spawns Sisyphus-Junior with domain config)
+// Option A: Category + Skills (sisyphus route; worker prompt when task is absent)
 task(
   category="[category-name]",
   load_skills=["skill-1", "skill-2"],
@@ -100,7 +100,6 @@ task(
 
 {SKILLS_SECTION}
 
-{{CATEGORY_SKILLS_DELEGATION_GUIDE}}
 
 ## 6-Section Prompt Structure (MANDATORY)
 
@@ -117,8 +116,7 @@ Every `task()` prompt MUST include ALL 6 sections:
 
 ## 3. REQUIRED TOOLS
 - [tool]: [what to search/check]
-- This harness has no Codegraph tools. Map the repo with Read/Grep/Glob/LSP and the ast-grep skill.
-- context7: Look up [library] docs
+- This harness has no Codegraph tools. Map the repo with `read`/`grep`/`glob`/`lsp_*` and the ast-grep skill.
 - ast-grep skill: Load the ast-grep skill for structural code search/rewrite. Use `sg --pattern '[pattern]' --lang [lang]` or `python3 scripts/ast_grep_helper.py search`.
 
 ## 4. MUST DO
@@ -214,10 +212,10 @@ task(category="quick", load_skills=[], run_in_background=false, prompt="...task 
 ## Step 0: Register Tracking
 
 ```
-TodoWrite([
-  { id: "orchestrate-plan", content: "Complete ALL implementation tasks", status: "in_progress", priority: "high" },
-  { id: "pass-final-wave", content: "Pass Final Verification Wave - ALL reviewers APPROVE", status: "pending", priority: "high" }
-])
+todo_write({ todos: [
+  { content: "Complete ALL implementation tasks", status: "in_progress" },
+  { content: "Pass Final Verification Wave - ALL reviewers APPROVE", status: "pending" },
+] })
 ```
 
 ## Step 1: Analyze Plan
@@ -236,15 +234,15 @@ TASK ANALYSIS:
 - Sequential (with named dependency): [list with reason]
 ```
 
-## Step 2: Notepad (auto-scaffolded)
+## Step 2: Initialize Notepad
 
-`/ulw-execute` creates `.omo/notepads/{plan-name}/` with these files automatically:
+Create `.omo/notepads/{plan-name}/` with these files:
 - `learnings.md` - Conventions, patterns
 - `decisions.md` - Architectural choices
 - `issues.md` - Problems, gotchas
 - `problems.md` - Unresolved blockers
 
-If the directory is missing (e.g. plan predates auto-scaffold), create it with `mkdir -p`. Append findings after work; never overwrite.
+Use `mkdir -p` if the directory is missing. Append findings after work; never overwrite.
 
 ## Step 3: Execute Tasks
 
@@ -254,8 +252,8 @@ Per the parallel-by-default mandate above: every task without a NAMED blocker go
 
 ### 3.2 Pre-Delegation
 ```
-Read(".omo/notepads/{plan-name}/learnings.md")
-Read(".omo/notepads/{plan-name}/issues.md")
+read(filePath=".omo/notepads/{plan-name}/learnings.md")
+read(filePath=".omo/notepads/{plan-name}/issues.md")
 ```
 Extract wisdom → include in EVERY dispatched prompt under "Inherited Wisdom".
 
@@ -275,9 +273,9 @@ Subagents claim "done" when code is broken, stubs are scattered, or features exp
 
 #### PHASE 1: READ THE CODE FIRST (before running anything)
 
-1. `Bash("git diff --stat")` → confirm scope.
-2. `Read` EVERY changed file. Trace logic. Compare to the task spec.
-3. Check for stubs (`Grep` TODO/FIXME/HACK/xxx) and anti-patterns (`Grep` `as any`/`@ts-ignore`/empty catch).
+1. `bash(command="git diff --stat")` → confirm scope.
+2. `read` EVERY changed file. Trace logic. Compare to the task spec.
+3. Check for stubs (`grep` TODO/FIXME/HACK/xxx) and anti-patterns (`grep` `as any`/`@ts-ignore`/empty catch).
 4. Cross-check claims: said "Updated X" → READ X; said "Added tests" → READ them and confirm they exercise real behavior.
 
 If you cannot explain every changed line, you have NOT reviewed it.
@@ -293,7 +291,7 @@ If Phase 1 found issues but Phase 2 passes: Phase 2 is incomplete. Fix the code.
 
 #### PHASE 3: HANDS-ON QA (MANDATORY for user-facing)
 
-- **Frontend/UI**: `/playwright` — load page, click flow, check console.
+- **Frontend/UI**: `visual-qa` skill — load page, click flow, check console.
 - **TUI/CLI**: persistent `bash` — happy path, bad input, --help.
 - **API/Backend**: `curl` — 200, 4xx, malformed input.
 - **Config/Infra**: actually start the service or load the config.
@@ -310,7 +308,7 @@ ALL three YES → proceed and mark the checkbox. Any "unsure" = no.
 
 After the gate passes, READ the plan file:
 ```
-Read(".omo/plans/{plan-name}.md")
+read(filePath=".omo/plans/{plan-name}.md")
 ```
 Count remaining **top-level task** checkboxes (ignore nested verification/evidence checkboxes). Ground truth.
 
@@ -332,7 +330,7 @@ The plan's Final Wave tasks (F1-F4) are APPROVAL GATES. Each reviewer produces a
 
 1. Execute all Final Wave tasks IN PARALLEL — fire F1, F2, F3, F4 in ONE response.
 2. If ANY verdict is REJECT: fix via `task(task_id=...)`, re-run that reviewer, repeat until ALL APPROVE.
-3. Mark `pass-final-wave` todo as `completed`.
+3. Mark the "Pass Final Verification Wave" todo and the "Complete ALL implementation tasks" todo as `completed`.
 
 ```
 ORCHESTRATION COMPLETE - FINAL WAVE PASSED
@@ -455,7 +453,7 @@ FINAL WAVE: F1 [...] | F2 [...] | F3 [...] | F4 [...]
 
 2. Confirm via your tools that the active work in `.omo/boulder.json` now has `status: "completed"` and `elapsed_ms` populated. The hook calls `completeBoulder()` for you; you are reading state, not writing it.
 
-3. Mark the `pass-final-wave` todo as `completed` only after the Final Verification Wave reviewers all APPROVE. If the wave has not run yet, run it now in parallel; the boulder-complete nudge does not bypass it.
+3. Mark the "Pass Final Verification Wave" todo and the "Complete ALL implementation tasks" todo as `completed` only after the Final Verification Wave reviewers all APPROVE. If the wave has not run yet, run it now in parallel; the boulder-complete nudge does not bypass it.
 
 The nudge fires at most once per work. If you missed it (compaction, session restart), read `boulder.json` yourself, compute the same summary from `started_at`, `ended_at`, and `task_sessions[*].elapsed_ms`, and print it.
 </boulder_completion_response>

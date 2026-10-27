@@ -102,7 +102,7 @@ A pass is complete only when all applicable gates are green. Skip gates that are
 
 ## Process
 
-### Phase 0: Plan with TodoWrite
+### Phase 0: Plan with todo_write
 
 Create todos for all phases below. Mark `in_progress` one at a time.
 
