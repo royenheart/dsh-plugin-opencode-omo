@@ -17,6 +17,8 @@ export interface OmoRoleView {
 }
 
 /** Reactive snapshot exposed by the client role store. */
+export type OmoRolesErrorReason = 'not-ready' | 'unavailable' | 'host-refused' | 'transport-failed'
+
 export interface OmoRolesState {
   readonly defaultRole: string
   readonly roles: readonly OmoRoleView[]
@@ -28,6 +30,8 @@ export interface OmoRolesState {
   readonly loading: boolean
   readonly degraded: boolean
   readonly error: string | null
+  /** Closed machine-readable error reason; `error` remains the display message. */
+  readonly errorReason: OmoRolesErrorReason | null
 }
 
 /** One adapter-owned reasoning effort choice. */

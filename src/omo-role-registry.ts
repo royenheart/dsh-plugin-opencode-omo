@@ -43,6 +43,8 @@ export interface OmoRoleRegistryFace {
   readonly roles: typeof OMO_ROLES
   /** Role selected for one session (settings-backed; default sisyphus). */
   roleFor(sessionId: string): string
+  /** Whether the session has an explicit/persisted role pin. */
+  hasRolePin(sessionId: string): boolean
   /** Persist the role selected for one session. */
   setRole(sessionId: string, role: string): Promise<void>
   /**
@@ -96,8 +98,11 @@ function normalizeModel(model: OmoModelSelection): OmoModelSelection {
 
 /** Normalize one role config for storage (rejects malformed wire shapes). */
 export function normalizeRoleConfig(config: OmoRoleConfig): StoredOmoRoleConfig {
-  if (config === null || typeof config !== 'object') return { model: null, fallbackModels: [] }
-  const model = config.model === undefined || config.model === null ? null : normalizeModel(config.model)
+  if (config === null || typeof config !== 'object') return { fallbackModels: [] }
+  const followSession = config.followSession === true || config.model === null
+  const model = config.model === undefined || config.model === null
+    ? undefined
+    : normalizeModel(config.model)
   const fallbackModels = Array.isArray(config.fallbackModels)
     ? config.fallbackModels.map(normalizeModel)
     : []
@@ -125,7 +130,7 @@ export function normalizeRoleConfig(config: OmoRoleConfig): StoredOmoRoleConfig 
     : undefined
   const cleanedUltrawork = ultrawork !== undefined && Object.keys(ultrawork).length > 0 ? ultrawork : undefined
   return {
-    model,
+    ...(followSession ? { model: null } : model === undefined ? {} : { model }),
     fallbackModels,
     ...(maxSteps === undefined ? {} : { maxSteps }),
     ...(cleanedUltrawork === undefined ? {} : { ultrawork: cleanedUltrawork }),
@@ -161,6 +166,11 @@ export class OmoRoleRegistry extends Service {
 
   get roles(): typeof OMO_ROLES {
     return OMO_ROLES
+  }
+
+  hasRolePin(sessionId: string): boolean {
+    const stored = this.config.sessions.get()[sessionId]
+    return this.sessionOverrides.has(sessionId) || (stored !== undefined && isOmoRole(stored))
   }
 
   roleFor(sessionId: string): string {
@@ -199,7 +209,7 @@ export class OmoRoleRegistry extends Service {
     const stored = this.config.roles.get()[normalizeOmoRole(role)]
     if (stored === undefined) return emptyRoleConfig()
     return {
-      ...(stored.model === null || stored.model === undefined ? {} : { model: stored.model }),
+      ...(stored.model === null ? { followSession: true } : stored.model === undefined ? {} : { model: stored.model }),
       fallbackModels: stored.fallbackModels ?? [],
       ...(stored.maxSteps === undefined ? {} : { maxSteps: stored.maxSteps }),
       ...(stored.ultrawork === undefined ? {} : { ultrawork: stored.ultrawork }),
@@ -208,10 +218,22 @@ export class OmoRoleRegistry extends Service {
 
   async setRoleConfig(role: string, config: OmoRoleConfig): Promise<void> {
     if (!isOmoRole(role)) throw new TypeError(`unknown omo role "${role}"`)
+    const current = this.config.roles.get()[role]
     const normalized = normalizeRoleConfig(config)
-    await this.settings.update('opencode-omo', {
-      roles: { ...this.config.roles.get(), [role]: normalized },
-    })
+    // settings.update() recursively merges role objects, which cannot remove a
+    // previous `model`/`maxSteps`/`ultrawork`. Setting the whole role path via
+    // mutate makes the omitted-model omo-default state actually stick.
+    const next = {
+      ...(normalized.model === undefined ? {} : { model: normalized.model }),
+      fallbackModels: normalized.fallbackModels,
+      ...(normalized.maxSteps === undefined
+        ? current?.maxSteps === undefined ? {} : { maxSteps: current.maxSteps }
+        : { maxSteps: normalized.maxSteps }),
+      ...(normalized.ultrawork === undefined
+        ? current?.ultrawork === undefined ? {} : { ultrawork: current.ultrawork }
+        : { ultrawork: normalized.ultrawork }),
+    }
+    await this.settings.mutate('opencode-omo', [{ op: 'set', path: ['roles', role], value: next }])
   }
 
   configs(): Record<string, OmoRoleConfig> {
@@ -221,7 +243,7 @@ export class OmoRoleRegistry extends Service {
       return [role.id, stored === undefined
         ? emptyRoleConfig()
         : {
-          ...(stored.model === null || stored.model === undefined ? {} : { model: stored.model }),
+          ...(stored.model === null ? { followSession: true } : stored.model === undefined ? {} : { model: stored.model }),
           fallbackModels: stored.fallbackModels ?? [],
           ...(stored.maxSteps === undefined ? {} : { maxSteps: stored.maxSteps }),
           ...(stored.ultrawork === undefined ? {} : { ultrawork: stored.ultrawork }),

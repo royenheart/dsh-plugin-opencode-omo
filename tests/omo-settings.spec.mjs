@@ -35,6 +35,7 @@ test('normalizeOmoSettingsSection reads stored role configs into the runtime sha
   assert.equal(section.roles['sisyphus'].ultrawork.model.model, 'gpt-5.6')
   // model: null decodes to "follow session model" (model omitted).
   assert.equal(section.roles['hephaestus'].model, undefined)
+  assert.equal(section.roles['hephaestus'].followSession, true)
   assert.deepEqual(section.roles['hephaestus'].fallbackModels, [])
   // Unknown session roles are dropped.
   assert.deepEqual(section.sessions, { 'session-a': 'atlas' })

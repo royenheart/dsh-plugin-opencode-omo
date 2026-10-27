@@ -1,9 +1,10 @@
 /**
  * RoleSelect — the omo agent-type picker occupying dsh's existing
  * `conversation.input.left` composer slot (left tool row, after the
- * access/plan chips). Choosing a role persists it for the session via the
- * hybrid role store and, when that role pins a primary model, submits the same
- * provider/model through the session model RPC so the next step routes there.
+ * access/plan chips). Choosing a role persists it for the session through the
+ * official `configForms.get('opencode-omo')` form and, when that role pins a
+ * primary model, submits the same provider/model through the session model RPC
+ * so the next step routes there.
  *
  * The trigger styles are copied from ui-conversation's PermissionSelect so the
  * chip looks like the other composer mode chips (same height, padding, radius,

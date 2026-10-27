@@ -9,12 +9,17 @@
  *
  * The store itself is React-free so the transport selection can be unit-tested
  * with plain Node; components subscribe through `useSyncExternalStore`.
+ *
+ * All writes go through `reduce` via `dispatch`; the form subscription, save
+ * handlers and UI handlers only emit events. Error states carry a closed
+ * machine-readable reason in addition to the display message.
  */
 
 import { OMO_DEFAULT_ROLE, OMO_ROLES } from '../core/omo-roles.ts'
+import { normalizeOmoSettingsSection } from '../core/omo-settings.ts'
 import type { OmoSettingsSection } from '../core/omo-settings.ts'
 import type { OmoRoleConfig } from '../core/omo-roles.ts'
-import type { OmoModelSelection, OmoRolesState, OmoRoleView } from './omo-wire.ts'
+import type { OmoModelSelection, OmoRolesErrorReason, OmoRolesState, OmoRoleView } from './omo-wire.ts'
 
 /** The official settings form face this client consumes (see `ConfigForm`). */
 export interface OmoConfigForm {
@@ -27,6 +32,16 @@ export interface OmoConfigForm {
   set(field: 'roles' | 'sessions', value: unknown): Promise<boolean>
 }
 
+type SnapshotChanges = Partial<Pick<OmoRolesState, 'configs' | 'sessions' | 'currentRole'>>
+
+type StoreEvent =
+  | { readonly type: 'snapshot/loading' }
+  | { readonly type: 'snapshot/unavailable' }
+  | { readonly type: 'snapshot/ready'; readonly section: OmoSettingsSection; readonly currentRole: string }
+  | { readonly type: 'save/optimistic'; readonly changes: SnapshotChanges }
+  | { readonly type: 'save/failed'; readonly reason: OmoRolesErrorReason; readonly message: string }
+  | { readonly type: 'settings/not-ready' }
+
 const EMPTY_STATE: OmoRolesState = {
   defaultRole: OMO_DEFAULT_ROLE,
   roles: OMO_ROLES,
@@ -37,6 +52,50 @@ const EMPTY_STATE: OmoRolesState = {
   loading: true,
   degraded: false,
   error: null,
+  errorReason: null,
+}
+
+function reduce(state: OmoRolesState, event: StoreEvent): OmoRolesState {
+  switch (event.type) {
+    case 'snapshot/loading':
+      return { ...state, loading: true, degraded: false }
+    case 'snapshot/unavailable':
+      return {
+        ...state,
+        loading: false,
+        degraded: true,
+        error: 'opencode-omo settings unavailable in this browser',
+        errorReason: 'unavailable',
+      }
+    case 'snapshot/ready':
+      return {
+        ...state,
+        roles: OMO_ROLES,
+        configs: event.section.roles,
+        sessions: event.section.sessions,
+        currentRole: event.currentRole,
+        loading: false,
+        degraded: false,
+        error: null,
+        errorReason: null,
+      }
+    case 'save/optimistic':
+      return { ...state, ...event.changes, error: null, errorReason: null }
+    case 'save/failed':
+      return { ...state, error: event.message, errorReason: event.reason }
+    case 'settings/not-ready':
+      return {
+        ...state,
+        loading: false,
+        degraded: true,
+        error: 'opencode-omo settings are not ready in this browser',
+        errorReason: 'not-ready',
+      }
+    default: {
+      const never: never = event
+      return never
+    }
+  }
 }
 
 /**
@@ -80,30 +139,53 @@ export class OmoRolesStore {
 
   /** Persist one session's role. */
   async setRole(sessionId: string, role: string): Promise<void> {
-    if (this.form === undefined) throw new Error('opencode-omo settings unavailable in this browser')
-    const section = this.section()
-    const sessions = { ...section.sessions, [sessionId]: role }
-    this.publish({ ...this.state, sessions, currentRole: role, error: null })
-    const accepted = await this.form.set('sessions', sessions)
+    const form = this.readyForm()
+    const sessions = { ...this.storedSessions(), [sessionId]: role }
+    this.dispatch({ type: 'save/optimistic', changes: { sessions: { ...this.state.sessions, [sessionId]: role }, currentRole: role } })
+    let accepted
+    try {
+      accepted = await form.set('sessions', sessions)
+    } catch (cause) {
+      this.fail('transport-failed', cause)
+      throw cause
+    }
     if (!accepted) {
-      this.refresh()
       const error = new Error('the Host refused the role change')
-      this.publish({ ...this.state, error: error.message })
+      this.fail('host-refused', error)
       throw error
     }
   }
 
   /** Persist one role's model/fallback configuration. */
   async setRoleConfig(role: string, config: OmoRoleConfig): Promise<void> {
-    if (this.form === undefined) throw new Error('opencode-omo settings unavailable in this browser')
+    const form = this.readyForm()
     const section = this.section()
-    const roles = { ...section.roles, [role]: config }
-    this.publish({ ...this.state, configs: roles, error: null })
-    const accepted = await this.form.set('roles', roles)
+    const current = section.roles[role] ?? { fallbackModels: [] as const }
+    const next = { ...current, ...config }
+    const { followSession, ...storedBase } = next
+    // Stored shape: model:null is the explicit "follow session" sentinel; an
+    // omitted model is the distinct omo-default state. Fallback/effort edits
+    // therefore must not silently turn a default primary into follow-session.
+    const stored = {
+      ...storedBase,
+      ...(followSession === true
+        ? { model: null }
+        : next.model === undefined
+          ? {}
+          : { model: next.model }),
+    }
+    const roles = { ...this.storedRoles(), [role]: stored }
+    this.dispatch({ type: 'save/optimistic', changes: { configs: { ...section.roles, [role]: next } } })
+    let accepted
+    try {
+      accepted = await form.set('roles', roles)
+    } catch (cause) {
+      this.fail('transport-failed', cause)
+      throw cause
+    }
     if (!accepted) {
-      this.refresh()
       const error = new Error('the Host refused the role configuration')
-      this.publish({ ...this.state, error: error.message })
+      this.fail('host-refused', error)
       throw error
     }
   }
@@ -112,38 +194,68 @@ export class OmoRolesStore {
   private refresh(): void {
     const snapshot = this.form?.getSnapshot()
     if (snapshot === undefined) {
-      this.publish({ ...this.state, loading: false, degraded: true, error: 'opencode-omo settings unavailable in this browser' })
+      this.dispatch({ type: 'snapshot/unavailable' })
       return
     }
     if (snapshot.status === 'ready') {
-      const section = snapshot.value ?? { roles: {}, sessions: {} }
-      this.publish({
-        ...this.state,
-        roles: OMO_ROLES,
-        configs: section.roles,
-        sessions: section.sessions,
+      const section = normalizeOmoSettingsSection(snapshot.value)
+      this.dispatch({
+        type: 'snapshot/ready',
+        section,
         currentRole: this.sessionId === undefined ? OMO_DEFAULT_ROLE : (section.sessions[this.sessionId] ?? OMO_DEFAULT_ROLE),
-        loading: false,
-        degraded: false,
-        error: null,
       })
       return
     }
     if (snapshot.status === 'unavailable') {
-      this.publish({
-        ...this.state,
-        loading: false,
-        degraded: true,
-        error: 'opencode-omo settings unavailable in this browser',
-      })
+      this.dispatch({ type: 'snapshot/unavailable' })
+      return
     }
+    this.dispatch({ type: 'snapshot/loading' })
   }
 
   private section(): OmoSettingsSection {
-    return this.form?.getSnapshot().value ?? { roles: {}, sessions: {} }
+    return normalizeOmoSettingsSection(this.form?.getSnapshot().value)
   }
 
-  private publish(next: OmoRolesState): void {
+  /** A form that has received the Host's first accepted section and accepts writes. */
+  private readyForm(): OmoConfigForm {
+    const snapshot = this.form?.getSnapshot()
+    if (this.form === undefined || snapshot === undefined || snapshot.status !== 'ready' || snapshot.writable !== true) {
+      this.dispatch({ type: 'settings/not-ready' })
+      throw new Error('opencode-omo settings are not ready in this browser')
+    }
+    return this.form
+  }
+
+  private fail(reason: OmoRolesErrorReason, cause: unknown): void {
+    this.refresh()
+    this.dispatch({
+      type: 'save/failed',
+      reason,
+      message: cause instanceof Error ? cause.message : String(cause),
+    })
+  }
+
+  /** Stored role map, preserving other roles' null/omitted follow-session shape. */
+  private storedRoles(): Record<string, unknown> {
+    const value = this.form?.getSnapshot().value as { roles?: unknown } | undefined
+    return value !== null && typeof value === 'object' && value.roles !== null && typeof value.roles === 'object'
+      ? { ...value.roles as Record<string, unknown> }
+      : {}
+  }
+
+  /** Stored session map, preserving entries the runtime normalizer would drop. */
+  private storedSessions(): Record<string, string> {
+    const value = this.form?.getSnapshot().value as { sessions?: unknown } | undefined
+    return value !== null && typeof value === 'object' && value.sessions !== null && typeof value.sessions === 'object'
+      ? { ...value.sessions as Record<string, string> }
+      : {}
+  }
+
+  /** The only writer of reactive state. */
+  private dispatch(event: StoreEvent): void {
+    const next = reduce(this.state, event)
+    if (next === this.state) return
     this.state = next
     for (const listener of this.listeners) listener()
   }
