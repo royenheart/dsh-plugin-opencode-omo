@@ -24,30 +24,52 @@ const TS_SERVER = {
 }
 
 export async function apply(ctx) {
-  let lsp
-  let stdio
-  let tool
+  const realm = ctx.isolate('lsp')
+  // The fallback names live in lsp-surface and are useful precisely when the
+  // LSP packages are absent; import them independently of the optional trio.
   let surface
   try {
-    [lsp, stdio, tool, surface] = await Promise.all([
-      import('@deepseek-ai/dsh-lsp'),
-      import('@deepseek-ai/dsh-lsp-stdio'),
-      import('@deepseek-ai/dsh-tool-lsp'),
-      import('./lsp-surface.mjs'),
-    ])
+    surface = await import('./lsp-surface.mjs')
   } catch (error) {
-    ctx.logger?.warn(`opencode-omo: LSP packages unavailable; continuing without LSP (${String(error)})`)
+    ctx.logger?.warn(`opencode-omo: LSP surface unavailable (${String(error)})`)
     return
   }
 
-  const realm = ctx.isolate('lsp')
-  await realm.plugin(lsp.default ?? lsp)
-  const hasServer = spawnSync('typescript-language-server', ['--version'], {
-    stdio: 'ignore',
-    timeout: 5000,
-  }).error === undefined
-  if (hasServer) await realm.plugin(stdio, { servers: TS_SERVER })
-  else ctx.logger?.warn('opencode-omo: typescript-language-server is not on PATH; LSP tool has no provider')
-  await realm.plugin(tool)
-  await realm.plugin(surface)
+  let lsp
+  let stdio
+  let tool
+  try {
+    [lsp, stdio, tool] = await Promise.all([
+      import('@deepseek-ai/dsh-lsp'),
+      import('@deepseek-ai/dsh-lsp-stdio'),
+      import('@deepseek-ai/dsh-tool-lsp'),
+    ])
+  } catch (error) {
+    ctx.logger?.warn(`opencode-omo: LSP packages unavailable; registering fallback names only (${String(error)})`)
+    try {
+      await realm.plugin(surface)
+    } catch (mountError) {
+      ctx.logger?.warn(`opencode-omo: LSP fallback surface failed (${String(mountError)})`)
+    }
+    return
+  }
+
+  try {
+    await realm.plugin(lsp.default ?? lsp)
+    const hasServer = spawnSync('typescript-language-server', ['--version'], {
+      stdio: 'ignore',
+      timeout: 5000,
+    }).error === undefined
+    if (hasServer) await realm.plugin(stdio, { servers: TS_SERVER })
+    else ctx.logger?.warn('opencode-omo: typescript-language-server is not on PATH; LSP tool has no provider')
+    await realm.plugin(tool)
+    await realm.plugin(surface)
+  } catch (error) {
+    ctx.logger?.warn(`opencode-omo: LSP mount failed; registering fallback names (${String(error)})`)
+    try {
+      await realm.plugin(surface)
+    } catch (mountError) {
+      ctx.logger?.warn(`opencode-omo: LSP fallback surface failed (${String(mountError)})`)
+    }
+  }
 }

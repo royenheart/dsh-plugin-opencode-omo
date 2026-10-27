@@ -3,42 +3,22 @@
 // core of opencode's primary edit tool (its apply_patch.txt format).
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { unlinkSync } from 'node:fs'
+import { parsePatch } from './patch-parser.mjs'
 
 export const name = 'opencode-omo-apply-patch'
 export const inject = ['tools', 'fs']
 
-function parsePatch(patchText) {
-  const ops = []
-  let current
-  for (const raw of patchText.split(/\r?\n/)) {
-    const line = raw
-    if (line.startsWith('*** Begin Patch') || line.trim() === '') continue
-    if (line.startsWith('*** End Patch')) break
-    const addMatch = line.match(/^\*\*\* Add File:?\s*(.*)$/)
-    const delMatch = line.match(/^\*\*\* Delete File:?\s*(.*)$/)
-    const updMatch = line.match(/^\*\*\* Update File:?\s*(.*)$/)
-    const movMatch = line.match(/^\*\*\* Move to:?\s*(.*)$/)
-    if (addMatch) {
-      current = { kind: 'add', path: addMatch[1].trim(), lines: [] }
-      ops.push(current)
-    } else if (delMatch) {
-      current = { kind: 'delete', path: delMatch[1].trim() }
-      ops.push(current)
-    } else if (updMatch) {
-      current = { kind: 'update', path: updMatch[1].trim(), moveTo: undefined, hunks: [] }
-      ops.push(current)
-    } else if (movMatch) {
-      if (current?.kind === 'update') current.moveTo = movMatch[1].trim()
-    } else if (line.startsWith('@@')) {
-      if (current?.kind === 'update') current.hunks.push({ context: line.slice(2).trim(), old: [], new: [] })
-    } else if (line.startsWith('+')) {
-      if (current?.kind === 'add') current.lines.push(line.slice(1))
-      else if (current?.kind === 'update') current.hunks[current.hunks.length - 1]?.new.push(line.slice(1))
-    } else if (line.startsWith('-')) {
-      if (current?.kind === 'update') current.hunks[current.hunks.length - 1]?.old.push(line.slice(1))
+async function resolveToolCwd(ctx, exec) {
+  try {
+    const service = ctx.get?.('workingDirectory')
+    if (service?.ensure !== undefined && exec.agent !== undefined) {
+      const cwd = await service.ensure(exec.agent, exec.signal)
+      if (typeof cwd === 'string' && cwd !== '') return cwd
     }
+  } catch {
+    // Fall back to the session header.
   }
-  return ops
+  return exec.agent?.session.header.cwd
 }
 
 function applyHunks(content, hunks) {
@@ -83,7 +63,7 @@ export function apply(ctx) {
     async execute(args, exec) {
       const ops = parsePatch(args.patch_text)
       if (ops.length === 0) throw new Error('apply_patch: no file operations found in patch')
-      const cwd = exec.agent?.session.header.cwd
+      const cwd = await resolveToolCwd(ctx, exec)
       const applied = []
       for (const op of ops) {
         const target = await ctx.fs.resolve(op.path, { cwd, signal: exec.signal })

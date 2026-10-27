@@ -11,8 +11,11 @@
 //
 // Every other allow/deny rule is already enforced by dsh-native sandbox policy,
 // the driver's named-role restriction map, and the driver's model-family tool gate.
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
+import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { isDelegatedSession } from './delegated-session.mjs'
+import { parsePatch } from './patch-parser.mjs'
 
 export { isDelegatedSession }
 
@@ -48,6 +51,25 @@ function workspaceRoot(exec) {
   return exec.agent?.session?.header?.cwd ?? process.cwd()
 }
 
+async function workingDirectory(exec, root) {
+  const agent = exec.agent
+  let service
+  try {
+    service = agent?.ctx?.get?.('workingDirectory')
+  } catch {
+    return root
+  }
+  if (service !== undefined && typeof service.ensure === 'function') {
+    try {
+      const resolved = await service.ensure(agent, exec.signal)
+      if (typeof resolved === 'string' && resolved !== '') return resolved
+    } catch {
+      // Fall back to the session header when the host cannot resolve it.
+    }
+  }
+  return root
+}
+
 /** One candidate path argument for a tool call, or undefined when not path-bearing. */
 export function pathArgument(exec) {
   const names = PATH_ARGUMENTS[exec.name]
@@ -63,17 +85,87 @@ export function pathArgument(exec) {
  * True when `path` escapes the workspace root. Absolute paths outside the root
  * escape; relative paths are resolved against the root and checked.
  */
-export function outsideWorkspace(path, root) {
-  const absolute = isAbsolute(path) ? resolve(path) : resolve(root, path)
-  const rel = relative(resolve(root), absolute)
+function expandHome(path) {
+  if (path === '~') return homedir()
+  if (path.startsWith('~/')) return join(homedir(), path.slice(2))
+  return path
+}
+
+function realTarget(path, depth = 0) {
+  if (depth > 64) return undefined
+  try {
+    return realpathSync.native(path)
+  } catch {
+    // The full path may not exist; resolve its parent physically, preserving
+    // `..` until after the symlink traversal.
+  }
+  try {
+    if (lstatSync(path).isSymbolicLink()) {
+      const parentReal = realTarget(dirname(path), depth + 1)
+      if (parentReal === undefined) return undefined
+      const target = readlinkSync(path)
+      const targetPath = isAbsolute(target) ? target : `${parentReal}${sep}${target}`
+      return realTarget(targetPath, depth + 1)
+    }
+  } catch {
+    // Fall through to the parent walk.
+  }
+  const parent = dirname(path)
+  if (parent === path) return resolve(path)
+  const parentReal = realTarget(parent, depth + 1)
+  return parentReal === undefined ? undefined : `${parentReal}${sep}${basename(path)}`
+}
+
+function absoluteForCheck(path, root) {
+  const expanded = expandHome(path)
+  if (isAbsolute(expanded)) return expanded
+  return `${root}${root.endsWith(sep) ? '' : sep}${expanded}`
+}
+
+/**
+ * True when `path` escapes the workspace root after expanding `~` and
+ * realpathing the nearest existing ancestor. This matches the local fs
+ * executor's resolution semantics (a lexical check alone lets `~/x` or an
+ * in-workspace symlink escape without an ask).
+ */
+export function outsideWorkspace(path, root, cwd = root) {
+  const target = realTarget(absoluteForCheck(path, cwd))
+  const rootReal = realTarget(root)
+  if (target === undefined || rootReal === undefined) return true
+  const rel = relative(rootReal, target)
   if (rel === '') return false
   return rel.startsWith('..') || rel.startsWith(`..${sep}`) || isAbsolute(rel)
 }
 
-export function externalDirectoryReason(exec) {
+/** Every path a freeform apply-patch body creates, updates, moves, or deletes. */
+function patchPaths(patchText) {
+  return parsePatch(patchText).flatMap(op => [op.path, op.moveTo].filter(path => typeof path === 'string' && path !== ''))
+}
+
+export async function externalDirectoryReason(exec) {
+  const root = workspaceRoot(exec)
+  if (exec.name === 'apply_patch' && typeof exec.arguments?.patch_text === 'string') {
+    const cwd = await workingDirectory(exec, root)
+    for (const path of patchPaths(exec.arguments.patch_text)) {
+      if (outsideWorkspace(path, root, cwd)) {
+        return `opencode-omo: "${exec.name}" would access a path outside the workspace root and requires approval (opencode external_directory: ask)`
+      }
+    }
+    return undefined
+  }
   const path = pathArgument(exec)
-  if (path === undefined) return undefined
-  if (!outsideWorkspace(path, workspaceRoot(exec))) return undefined
+  if (path === undefined) {
+    if (exec.name === 'glob' || exec.name === 'grep') {
+      const cwd = await workingDirectory(exec, root)
+      if (outsideWorkspace(cwd, root, root)) {
+        return `opencode-omo: "${exec.name}" would search outside the workspace root and requires approval (opencode external_directory: ask)`
+      }
+    }
+    return undefined
+  }
+
+  const cwd = await workingDirectory(exec, root)
+  if (!outsideWorkspace(path, root, cwd)) return undefined
   return `opencode-omo: "${exec.name}" would access a path outside the workspace root and requires approval (opencode external_directory: ask)`
 }
 
@@ -156,7 +248,7 @@ export function apply(ctx) {
       return settleAsk(exec, reason)
     }
     if (decision.kind !== 'allow') return decision
-    const external = externalDirectoryReason(exec)
+    const external = await externalDirectoryReason(exec)
     if (external !== undefined) return settleAsk(exec, external)
     const doom = doomLoopReason(stateFor(exec), exec)
     if (doom !== undefined) return settleAsk(exec, doom)

@@ -77,7 +77,7 @@ test('pre-step rewrites tool-jobs notices and leaves other messages alone', asyn
   apply(ctx)
   assert.equal(decisions.length, 1)
   const notice = {
-    source: { kind: 'plugin', plugin: 'tool-jobs', form: 'notice', summary: 'done' },
+    source: { kind: 'tool-jobs', form: 'notice', summary: 'done' },
     content: [{ type: 'text', text: 'background job j1 (bash: test) finished [status: completed]. Read its output with job_output.' }],
   }
   const user = {

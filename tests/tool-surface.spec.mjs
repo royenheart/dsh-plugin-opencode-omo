@@ -288,6 +288,40 @@ test('formatDirectoryListing matches the OpenCode one-name-per-line contract', (
   )
 })
 
+test('read shim resolves directory listings through workingDirectory', async () => {
+  let resolvedOptions
+  const fs = {
+    async resolve(_requestedPath, options) {
+      resolvedOptions = options
+      return { displayPath: '/repo/sub/src' }
+    },
+    async stat() {
+      return { type: 'directory', version: 1 }
+    },
+    async listDir() {
+      return []
+    },
+  }
+  const ctx = {
+    get(name) {
+      if (name === 'fs') return fs
+      if (name === 'workingDirectory') return { ensure: async () => '/repo/sub' }
+      return undefined
+    },
+    emit() {},
+  }
+  const original = {
+    name: 'read',
+    description: 'dsh read',
+    output: { schema: { type: 'object' }, render: () => [] },
+    async execute() { throw new Error('directory listing should not forward') },
+  }
+  const shim = createReadShim(original, ctx)
+  const exec = { agent: { session: { header: { cwd: '/repo' } } }, signal: undefined }
+  await shim.execute({ filePath: 'src' }, exec)
+  assert.equal(resolvedOptions.cwd, '/repo/sub')
+})
+
 test('read shim lists directories and forwards files to the original tool', async () => {
   const emitted = []
   const dirTarget = { displayPath: '/tmp/proj' }

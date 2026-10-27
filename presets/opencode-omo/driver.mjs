@@ -23,8 +23,9 @@ import { dirname, join } from 'node:path'
 import { applyOmoDelegationCatalog } from './delegation-surface.mjs'
 import { isDelegatedSession } from './delegated-session.mjs'
 import { applyOmoLspCatalog } from './lsp-surface.mjs'
+import { restrictionForRole } from './delegation-restrictions.mjs'
 import { renderRulesFor } from './rules.mjs'
-import { roleForDelegationCall, toolRestrictionForDelegation } from './task-shim.mjs'
+import { KNOWN_CATEGORIES, roleForDelegationCall, toolRestrictionForDelegation } from './task-shim.mjs'
 
 export const name = 'opencode-omo-loop'
 
@@ -41,6 +42,8 @@ let assistantPrefillSupported = false
 
 /** Restriction pinned to a delegated child by its named tool / task(subagent_type). */
 const childRestrictions = new Map()
+/** Resumed children whose pin is missing/invalid use the read-only prompt role. */
+const childPromptRoles = new Map()
 
 const PROMPT_DIR = new URL('roles/prompts/', import.meta.url)
 const LEGACY_PROMPT_DIR = new URL('roles/', import.meta.url)
@@ -221,11 +224,17 @@ function keyTriggersMarkdown() {
   return KEY_TRIGGERS.map(line => `- ${line}`).join('\n')
 }
 
-function delegationTableMarkdown() {
+function delegationTableMarkdown(tools) {
+  const available = new Set((Array.isArray(tools) ? tools : []).map(tool => tool?.name))
+  const rows = DELEGATION_TABLE.flatMap(([name, when]) => {
+    const parts = name.split(' / ').filter(part => available.has(part))
+    return parts.length === 0 ? [] : [[parts.join(' / '), when]]
+  })
+  if (rows.length === 0) return ''
   return [
     '| agent | use when |',
     '|---|---|',
-    ...DELEGATION_TABLE.map(([name, when]) => `| ${name} | ${when} |`),
+    ...rows.map(([name, when]) => `| ${name} | ${when} |`),
   ].join('\n')
 }
 
@@ -304,7 +313,7 @@ function familySection(expr, tools) {
     case 'todoHookNote': return 'YOUR TODO CREATION WOULD BE TRACKED BY HOOK([SYSTEM REMINDER - TODO CONTINUATION])'
     case 'keyTriggers': return keyTriggersMarkdown()
     case 'toolSelection': return liveToolTableMarkdown(tools)
-    case 'delegationTable': return delegationTableMarkdown()
+    case 'delegationTable': return delegationTableMarkdown(tools)
     case 'exploreSection':
       return 'Use `explore` for internal codebase search: fire 1-3 in parallel for multi-angle questions, and specify quick/medium/very thorough.'
     case 'librarianSection':
@@ -342,7 +351,7 @@ function renderFamilyPrompt(template, tools) {
     .replaceAll('{{ personality }}', '')
     .replaceAll('{{ modelIdentity }}', 'GPT-5.5 / GPT-5.6')
     .replaceAll('{{ keyTriggers }}', keyTriggersMarkdown())
-    .replaceAll('{{ delegationTable }}', delegationTableMarkdown())
+    .replaceAll('{{ delegationTable }}', delegationTableMarkdown(tools))
     .replaceAll('{{ categorySkillsGuide }}', skillsGuideMarkdown())
     .replaceAll('{{ nonClaudePlannerSection }}', plannerSectionMarkdown())
     .replaceAll('{{ taskSystemGuide }}', taskSystemGuideMarkdown())
@@ -446,40 +455,62 @@ function specialistVariantFile(role, model) {
 
 /** Simplified dsh-tool-facing sections substituted into the atlas variant files. */
 function renderAtlasVariant(template, tools) {
-  const categorySection = [
-    '##### Option A: Use `task(category=...)` / `call_omo_agent(...)`',
-    'Dispatch implementation or QA units with `task(category="...", prompt=..., run_in_background=false)`. Known categories: visual-engineering, deep, ultrabrain, quick, writing, git.',
-  ].join('\n')
-  const agentSection = [
-    '##### Option B: Use a specialist directly',
-    ...DELEGATION_TABLE.map(([name, when]) => `- **\`${name}\`** - ${when}`),
-  ].join('\n')
-  const decisionMatrix = [
-    '##### Decision Matrix',
-    '- Internal codebase search → `explore` or `task(subagent_type="explore")` (parallel 1-3, `run_in_background=true`).',
-    '- External docs/OSS → `librarian` or `task(subagent_type="librarian")`.',
-    '- Architecture/hard debugging → `oracle` or `task(subagent_type="oracle")`.',
-    '- Plan analysis/review → `metis` / `momus`.',
-    '- Media → `multimodal-looker`.',
-    '- Independent implementation units → `task(category=...)`; many workers → `workflow` / `ralph`.',
-    '- Collect background ids with `background_output(task_id="bg_...")` after a completion notice; follow up with `task(task_id="ses_...")`.',
-    'Never provide both a named specialist and a generic task for the same unit.',
-  ].join('\n')
+  const available = new Set((Array.isArray(tools) ? tools : []).map(tool => tool?.name))
+  const categoryTools = ['task', 'call_omo_agent'].filter(tool => available.has(tool))
+  const categorySection = categoryTools.length === 0
+    ? ''
+    : [
+      `##### Option A: Use ${categoryTools.map(tool => `\`${tool}\``).join(' / ')}`,
+      `Dispatch implementation or QA units with ${categoryTools.map(tool => `\`${tool}\``).join(' or ')}. Known categories: ${KNOWN_CATEGORIES.join(', ')}.`,
+    ].join('\n')
+  const GENERIC_DELEGATION = new Set(['task', 'call_omo_agent', 'workflow', 'ralph'])
+  const agentRows = DELEGATION_TABLE.flatMap(([name, when]) => {
+    const parts = name.split(' / ').filter(part => available.has(part) && !GENERIC_DELEGATION.has(part))
+    return parts.length === 0 ? [] : [[parts.join(' / '), when]]
+  })
+  const agentSection = agentRows.length === 0
+    ? ''
+    : ['##### Option B: Use a specialist directly', ...agentRows.map(([name, when]) => `- **\`${name}\`** - ${when}`)].join('\n')
+  const matrixRows = [
+    { tools: ['explore', 'task'], render: names => `- Internal codebase search → ${names.map(name => name === 'task' ? '`task(subagent_type="explore")`' : '`explore`').join(' or ')} (parallel 1-3, \`run_in_background=true\`).` },
+    { tools: ['librarian', 'task'], render: names => `- External docs/OSS → ${names.map(name => name === 'task' ? '`task(subagent_type="librarian")`' : '`librarian`').join(' or ')}.` },
+    { tools: ['oracle', 'task'], render: names => `- Architecture/hard debugging → ${names.map(name => name === 'task' ? '`task(subagent_type="oracle")`' : '`oracle`').join(' or ')}.` },
+    { tools: ['metis', 'momus'], render: names => `- Plan analysis/review → ${names.map(name => `\`${name}\``).join(' / ')}.` },
+    { tools: ['multimodal-looker'], render: () => '- Media → `multimodal-looker`.' },
+    { tools: ['task', 'workflow', 'ralph'], render: names => `- Independent implementation units → ${names.map(name => name === 'task' ? '`task(category=...)`' : `\`${name}\``).join('; ')}.` },
+    { tools: ['background_output'], render: () => `- Collect background ids with \`background_output(task_id="bg_...")\` after a completion notice${available.has('task') ? '; follow up with `task(task_id="ses_...")`' : ''}.` },
+  ]
+  const matrixLines = matrixRows.map(row => {
+    const names = row.tools.filter(tool => available.has(tool))
+    return names.length === 0 ? '' : row.render(names)
+  }).filter(line => line !== '')
+  const decisionMatrix = matrixLines.length === 0
+    ? ''
+    : ['##### Decision Matrix', ...matrixLines, 'Never provide both a named specialist and a generic task for the same unit.'].join('\n')
   const skillsSection = skillsGuideMarkdown()
-  void tools
-  return template
+  let rendered = template
     .replaceAll('{CATEGORY_SECTION}', categorySection)
     .replaceAll('{AGENT_SECTION}', agentSection)
     .replaceAll('{DECISION_MATRIX}', decisionMatrix)
     .replaceAll('{SKILLS_SECTION}', skillsSection)
-    .replaceAll('{{CATEGORY_SKILLS_DELEGATION_GUIDE}}', skillsSection)
+  for (const tool of ['background_output', 'background_cancel']) {
+    if (!available.has(tool)) rendered = rendered.split('\n').filter(line => !line.includes(tool)).join('\n')
+  }
+  return rendered
 }
 
 /** Resolve one role's prompt body for the model this step routes to. */
-function rolePromptFor(role, model, tools) {
+function rolePromptFor(role, model, tools, delegated) {
+  if (delegated && (role === 'atlas' || role === 'sisyphus' || role === 'hephaestus' || role === 'sisyphus-junior')) {
+    // Delegated primary roles have DENY_PRIMARY and cannot orchestrate. Their
+    // catalog shape is irrelevant; the worker prompt is the role contract.
+    return `${rolePrompt('sisyphus-junior')}\n\n## Tool selection (live)\n\n${liveToolTableMarkdown(tools)}`
+  }
   const hephaestus = hephaestusVariantFile(model)
   if (role === 'hephaestus' && hephaestus !== undefined) {
-    const key = `variant:${hephaestus}`
+    // The hephaestus variants embed the live tool table, which differs between
+    // a primary and a delegated child (send_message) and between restrictions.
+    const key = `variant:${hephaestus}:${tools.map(tool => `${tool.name}\u0000${tool.description ?? ''}`).join('\u0001')}`
     const cached = rolePromptCache.get(key)
     if (cached !== undefined) return cached
     const template = promptFile(VARIANT_PROMPT_DIR, hephaestus)
@@ -491,7 +522,7 @@ function rolePromptFor(role, model, tools) {
   }
   if (role === 'atlas') {
     const file = atlasVariantFile(model)
-    const key = `variant:${file}`
+    const key = `variant:${file}:${tools.map(tool => tool.name).join(',')}`
     const cached = rolePromptCache.get(key)
     if (cached !== undefined) return cached
     const template = promptFile(VARIANT_PROMPT_DIR, file)
@@ -557,10 +588,10 @@ const DELEGATION_TABLE = [
   ['metis', '规划前意图/歧义分析'],
   ['momus', '计划可执行性与引用有效性评审'],
   ['multimodal-looker', 'PDF/图片/图表等媒体解读'],
-  ['hephaestus', '端到端复杂实现的深度 worker'],
-  ['atlas', '按计划自动执行并验证全部任务'],
+  ['hephaestus', 'Delegated hephaestus runs as a single-task worker with no nested delegation'],
+  ['atlas', 'Delegated atlas runs as a single-task worker with no nested delegation'],
   ['sisyphus-junior', '单一、边界清晰的轻量实现任务'],
-  ['sisyphus', '完整的 Sisyphus 编排子树（递归委派已由 toolFilter 关闭）'],
+  ['sisyphus', 'Delegated sisyphus runs as a single-task worker with no nested delegation'],
   ['athena / athena-junior / council-member', '委员会多视角评审与裁决'],
 ]
 
@@ -614,7 +645,7 @@ function dynamicSisyphusSections(tools, model) {
     .filter(tool => typeof tool?.name === 'string')
     .map(tool => `| ${tool.name} | ${toolCost(tool.name)} | ${clipped(tool.description)} |`)
     .sort()
-  const delegationRows = DELEGATION_TABLE.map(([name, when]) => `| ${name} | ${when} |`)
+  const delegationTable = delegationTableMarkdown(tools)
   const family = modelFamilyNote(model)
   return [
     '## Dynamic routing (generated every step)',
@@ -623,11 +654,7 @@ function dynamicSisyphusSections(tools, model) {
     '### Key triggers',
     ...KEY_TRIGGERS.map(line => `- ${line}`),
     '',
-    '### Delegation table',
-    '| agent | use when |',
-    '|---|---|',
-    ...delegationRows,
-    '',
+    ...(delegationTable === '' ? [] : ['### Delegation table', delegationTable, '']),
     '### Tool selection',
     '| tool | cost | purpose |',
     '|---|---|---|',
@@ -660,9 +687,13 @@ function opencodeTools(tools, model, restriction, allowSendMessage = false) {
   if (!Array.isArray(tools)) return tools
   const usePatch = opencodeUsesPatch(model)
   return applyOmoLspCatalog(applyOmoDelegationCatalog(tools, { allowSendMessage })).filter(tool => {
+    // Role restrictions apply to every model family, including the write
+    // tools. Otherwise a read-only specialist on a GPT route could actually
+    // execute apply_patch while the non-GPT view only looked inconsistent.
+    if (!toolAllowed(tool.name, restriction, allowSendMessage)) return false
     if (tool.name === 'apply_patch') return usePatch
     if (tool.name === 'edit' || tool.name === 'write') return !usePatch
-    return toolAllowed(tool.name, restriction, allowSendMessage)
+    return true
   })
 }
 
@@ -775,13 +806,13 @@ function nextPosition(session) {
 function currentRouteModel(state, session, agent) {
   const position = currentPosition(session)
   const key = `${position.turn}:${position.step}`
-  return state.resolvedRoutes.get(key)?.model ?? agent.options?.model
+  return state.assembledRoutes.get(key)?.model ?? agent.options?.model
 }
 
 /** Render the omo + opencode whole system prompt for one concrete route. */
 function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
   const session = agent.session
-  const role = omoRoles?.roleFor?.(session.id) ?? 'sisyphus'
+  const role = childPromptRoles.get(session.id) ?? omoRoles?.roleFor?.(session.id) ?? 'sisyphus'
   const restriction = restrictionFor(agent)
   // The tool table is model-facing prose the model uses to choose calls; it
   // must match the request catalog exactly. opencodeTools applies the same
@@ -789,8 +820,9 @@ function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
   const tools = opencodeTools(schemasFor(ctx, agent), model, restriction, isDelegatedSession(agent))
   // The prompt family must follow the model this step actually routes to, not
   // the session's previous route (omo re-bakes the prompt for the live model).
-  const roleSystem = rolePromptFor(role, model, tools)
-  const family = role === 'sisyphus' ? familyPromptFor(model) : undefined
+  const delegated = isDelegatedSession(agent)
+  const roleSystem = rolePromptFor(role, model, tools, delegated)
+  const family = role === 'sisyphus' && !delegated ? familyPromptFor(model) : undefined
   const dynamic = roleSystem === undefined && family === undefined
     ? dynamicSisyphusSections(tools, model)
     : ''
@@ -853,11 +885,18 @@ function restrictionFor(agent) {
   return childRestrictions.get(agent.session.id)
 }
 
+/** Whether a child session has already run a turn (i.e. this is a cold resume). */
+function sessionHasHistory(session) {
+  const events = session?.snapshotEvents?.() ?? []
+  return events.some(event => event.type === 'turn/start' || event.type === 'assistant/message')
+}
+
 /** State per live agent: fallback chain position, ultrawork turn, and the prompt/request-consistent route per turn:step. */
 function newState() {
   return {
     fallbackAttempts: new Map(),
     resolvedRoutes: new Map(),
+    assembledRoutes: new Map(),
     lastRouteTurn: 0,
     ultraworkTurn: 0,
   }
@@ -907,15 +946,16 @@ function primaryModelFor(omoRoles, session) {
 }
 
 function roleRoute(omoRoles, state, session, turn, step) {
-  if (omoRoles === undefined) return undefined
   if (turn !== state.lastRouteTurn) {
     // A fresh turn never inherits an older step's fallback position, an
     // older step's resolved route, or an older turn's ultrawork override.
     state.fallbackAttempts.clear()
     state.resolvedRoutes.clear()
+    state.assembledRoutes.clear()
     if (state.ultraworkTurn !== turn) state.ultraworkTurn = 0
     state.lastRouteTurn = turn
   }
+  if (omoRoles === undefined) return undefined
   const ultrawork = ultraworkRouteFor(omoRoles, state, session, turn)
   if (ultrawork?.model !== undefined) return ultrawork.model
   const attempt = state.fallbackAttempts.get(`${turn}:${step}`)
@@ -944,11 +984,17 @@ function advanceFallback(omoRoles, state, session, turn, step) {
   const key = `${turn}:${step}`
   const attempt = state.fallbackAttempts.get(key)
   const nextIndex = attempt === undefined ? 0 : attempt + 1
-  if (fallbackModelsFor(omoRoles, session)[nextIndex] === undefined) {
+  const fallback = fallbackModelsFor(omoRoles, session)[nextIndex]
+  if (fallback === undefined) {
     state.fallbackAttempts.delete(key)
     return false
   }
   state.fallbackAttempts.set(key, nextIndex)
+  // The retry reuses the assembly computed for the primary route; update the
+  // request plan so the next attempt actually routes to the fallback instead
+  // of re-sending the primary. The prompt/tools remain the assembled primary
+  // surface until the next step (the loop does not re-assemble a retry).
+  state.resolvedRoutes.set(key, { provider: fallback.provider, model: fallback.model, target: fallback })
   return true
 }
 
@@ -1077,6 +1123,7 @@ export function apply(ctx) {
       transformed.variables, agent,
     )
     state.resolvedRoutes.set(`${position.turn}:${position.step}`, route)
+    state.assembledRoutes.set(`${position.turn}:${position.step}`, route)
     transformed.variables.provider = route.provider
     transformed.variables.model = route.model
     transformed.variables.opencode_omo_prompt = renderOmoPrompt(
@@ -1185,6 +1232,7 @@ export function apply(ctx) {
   ctx.on('agent/disposed', ({ agent }) => {
     states.delete(agent.session.id)
     childRestrictions.delete(agent.session.id)
+    childPromptRoles.delete(agent.session.id)
   })
 
   // Named specialist tools and task() spawn children without a static
@@ -1197,11 +1245,30 @@ export function apply(ctx) {
     const restriction = toolRestrictionForDelegation(exec.name, exec.arguments)
     return pendingChild.run({ role, restriction }, () => next())
   })
-  ctx.on('agent/created', ({ agent }) => {
+  ctx.on('agent/created', ({ agent, source }) => {
     if (agent?.session?.header?.origin !== 'subagent') return
     const pending = pendingChild.getStore()
-    if (pending === undefined) return
+    if (pending === undefined) {
+      // A task_id follow-up cold-resumes the child later; the spawn-time
+      // pending context is gone. Restore the role filter from the pinned role.
+      // A resumed child with a missing pin fails closed to the read-only policy;
+      // a fresh unpinned workflow/ralph worker is a writer.
+      const pinned = omoRoles?.hasRolePin?.(agent.session.id) === true
+      // A fresh unpinned child comes from workflow/ralph-style spawning and is a
+      // writer; a cold-resumed child with a lost pin is treated read-only.
+      const resumed = source === undefined ? sessionHasHistory(agent.session) : source !== 'startup'
+      const inferred = restrictionForRole(
+        pinned
+          ? omoRoles?.roleFor?.(agent.session.id)
+          : resumed ? undefined : 'sisyphus',
+      )
+      childRestrictions.set(agent.session.id, inferred)
+      if (!pinned && resumed) childPromptRoles.set(agent.session.id, 'oracle')
+      else childPromptRoles.delete(agent.session.id)
+      return
+    }
     if (typeof omoRoles?.pinRole === 'function') omoRoles.pinRole(agent.session.id, pending.role)
+    childPromptRoles.set(agent.session.id, pending.role)
     if (pending.restriction !== undefined) childRestrictions.set(agent.session.id, pending.restriction)
   })
 }
