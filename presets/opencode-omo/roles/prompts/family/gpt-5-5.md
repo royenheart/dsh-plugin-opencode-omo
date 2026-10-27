@@ -141,14 +141,14 @@ Different patterns may be intentional, or migration may be in progress. Verify b
 Delegation is not an escape hatch; it is how you scale. Every delegation decision follows the same logic:
 
 - If a specialist agent (`oracle`, `metis`, `momus`, `librarian`, `explore`) perfectly matches the request, invoke that agent directly via `task(subagent_type=...)`.
-- If no specialist matches but a category does (`visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`, `writing`), delegate via `task(category=..., load_skills=[...])`. Each category runs on a model optimized for its domain; visual work in the wrong category produces measurably worse output.
+- If no specialist matches but a category does (`visual-engineering`, `ultrabrain`, `deep`, `quick`, `writing`, `git`), delegate via `task(category=..., load_skills=[...])`. Categories are routing hints; the configured sisyphus route supplies model and fallback.
 - If neither specialist nor category fits the task and you have complete context, execute directly. This should be rare.
 
 The default bias is to delegate. You work yourself only when the task is demonstrably simple and local.
 
 ### Visual and frontend work (zero tolerance)
 
-Any task involving UI, UX, CSS, styling, layout, animation, design, components, or frontend code goes to the `visual-engineering` category without exception. Never delegate visual work to `quick`, `unspecified-low`, `unspecified-high`, or execute it yourself. The model behind `visual-engineering` is tuned for aesthetic and structural design decisions; other models produce generic, AI-slop-looking interfaces that need to be redone.
+Any task involving UI, UX, CSS, styling, layout, animation, design, components, or frontend code goes to the `visual-engineering` category without exception. Never delegate visual work to `quick`, `deep`, or execute it yourself. Use `visual-engineering` for aesthetic and structural design decisions; `quick` and `deep` are not substitutes for visual judgment.
 
 ### Skill loading before delegation
 

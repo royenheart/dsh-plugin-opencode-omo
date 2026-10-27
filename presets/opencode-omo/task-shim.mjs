@@ -4,8 +4,8 @@
 // dsh's native subagent services.
 //
 // Routing:
-//   task_id        -> continuable follow-up (`ctx.subagents.followup`)
-//   subagent_type  -> start with the SAME toolFilter as the matching named
+//   task_id        -> continuable follow-up (`ctx.subagents.sendMessage`)
+//   subagent_type  -> pin the same role restriction as the matching named
 //                     row; the child prompt is the driver's complete
 //                     `<env>` + specialist body (no static persona overlay)
 //   category       -> generic subagent with a small category note in the
@@ -17,6 +17,8 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { fromOmoTaskId, toBackgroundTaskId, toSessionTaskId } from './delegation-surface.mjs'
+import { ROLE_TOOL_FILTERS } from './delegation-restrictions.mjs'
+import { INITIAL_BACKGROUND, transitionBackground } from './background-state.mjs'
 
 export const name = 'opencode-omo-task-shim'
 export const inject = ['tools', 'subagents', 'jobs']
@@ -53,74 +55,9 @@ export const KNOWN_CATEGORIES = [
 ]
 
 /**
- * toolFilters copied verbatim from agent.cordis.yml.
- * The read-only specialist rows deny every recursion/delegation name; the
- * primary-agent rows deny the whole named roster plus workflow/ralph;
- * multimodal-looker keeps only read/read_image.
- */
-const DENY_SPECIALISTS = [
-  'write',
-  'edit',
-  'task',
-  'call_omo_agent',
-  'subagent',
-  'subagent_fork',
-  'plan',
-  'oracle',
-  'librarian',
-  'explore',
-  'metis',
-  'momus',
-  'multimodal-looker',
-  'athena',
-  'athena-junior',
-  'council-member',
-  'workflow',
-  'ralph',
-]
-
-const DENY_PRIMARY = [
-  'task',
-  'call_omo_agent',
-  'subagent',
-  'subagent_fork',
-  'plan',
-  'oracle',
-  'librarian',
-  'explore',
-  'metis',
-  'momus',
-  'multimodal-looker',
-  'athena',
-  'athena-junior',
-  'council-member',
-  'sisyphus',
-  'hephaestus',
-  'atlas',
-  'sisyphus-junior',
-  'workflow',
-  'ralph',
-]
-
-/** Prometheus planner: write `.omo/` artifacts and research, never implement. */
-const DENY_PLAN = [
-  'task',
-  'call_omo_agent',
-  'subagent',
-  'subagent_fork',
-  'plan',
-  'sisyphus',
-  'hephaestus',
-  'atlas',
-  'sisyphus-junior',
-  'workflow',
-  'ralph',
-]
-
-/**
- * Named-row mapping: omo role id (driver prompt routing) and the exact
- * toolFilter that row configures in agent.cordis.yml. `plan` is the tool
- * name; its role is Prometheus.
+ * Named-row mapping: omo role id (driver prompt routing) and the shared
+ * capability filter from delegation-restrictions.mjs. agent.cordis.yml only
+ * registers the toolName. `plan` is the tool name; its role is Prometheus.
  */
 export const SUBAGENT_TYPE_TO_ROLE = {
   plan: 'prometheus',
@@ -142,59 +79,59 @@ export const SUBAGENT_TYPE_TO_ROLE = {
 export const SUBAGENT_TYPE_DEFS = {
   plan: {
     role: 'prometheus',
-    toolFilter: { deny: DENY_PLAN },
+    toolFilter: ROLE_TOOL_FILTERS.prometheus,
   },
   oracle: {
     role: 'oracle',
-    toolFilter: { deny: DENY_SPECIALISTS },
+    toolFilter: ROLE_TOOL_FILTERS.oracle,
   },
   librarian: {
     role: 'librarian',
-    toolFilter: { deny: DENY_SPECIALISTS },
+    toolFilter: ROLE_TOOL_FILTERS.librarian,
   },
   explore: {
     role: 'explore',
-    toolFilter: { deny: DENY_SPECIALISTS },
+    toolFilter: ROLE_TOOL_FILTERS.explore,
   },
   metis: {
     role: 'metis',
-    toolFilter: { deny: DENY_SPECIALISTS },
+    toolFilter: ROLE_TOOL_FILTERS.metis,
   },
   momus: {
     role: 'momus',
-    toolFilter: { deny: DENY_SPECIALISTS },
+    toolFilter: ROLE_TOOL_FILTERS.momus,
   },
   'multimodal-looker': {
     role: 'multimodal-looker',
-    toolFilter: { allow: ['read', 'read_image'] },
+    toolFilter: ROLE_TOOL_FILTERS['multimodal-looker'],
   },
   athena: {
     role: 'athena',
-    toolFilter: { deny: DENY_SPECIALISTS },
+    toolFilter: ROLE_TOOL_FILTERS.athena,
   },
   'athena-junior': {
     role: 'athena-junior',
-    toolFilter: { deny: DENY_SPECIALISTS },
+    toolFilter: ROLE_TOOL_FILTERS['athena-junior'],
   },
   'council-member': {
     role: 'council-member',
-    toolFilter: { deny: DENY_SPECIALISTS },
+    toolFilter: ROLE_TOOL_FILTERS['council-member'],
   },
   sisyphus: {
     role: 'sisyphus',
-    toolFilter: { deny: DENY_PRIMARY },
+    toolFilter: ROLE_TOOL_FILTERS.sisyphus,
   },
   hephaestus: {
     role: 'hephaestus',
-    toolFilter: { deny: DENY_PRIMARY },
+    toolFilter: ROLE_TOOL_FILTERS.hephaestus,
   },
   atlas: {
     role: 'atlas',
-    toolFilter: { deny: DENY_PRIMARY },
+    toolFilter: ROLE_TOOL_FILTERS.atlas,
   },
   'sisyphus-junior': {
     role: 'sisyphus-junior',
-    toolFilter: { deny: DENY_PRIMARY },
+    toolFilter: ROLE_TOOL_FILTERS['sisyphus-junior'],
   },
 }
 
@@ -211,6 +148,17 @@ export function roleForDelegationCall(name, args = {}) {
     return 'sisyphus'
   }
   return SUBAGENT_TYPE_TO_ROLE[name]
+}
+
+/** Tool restriction inherited by a child created through a named tool / task(). */
+export function toolRestrictionForDelegation(name, args = {}) {
+  if (name === 'task' || name === 'call_omo_agent') {
+    if (typeof args.task_id === 'string' && args.task_id.length > 0) return undefined
+    const type = args.subagent_type
+    if (typeof type === 'string' && type.length > 0) return SUBAGENT_TYPE_DEFS[type]?.toolFilter
+    return ROLE_TOOL_FILTERS.sisyphus
+  }
+  return SUBAGENT_TYPE_DEFS[name]?.toolFilter
 }
 
 /**
@@ -288,6 +236,7 @@ function composeChildPrompt(route, args) {
   const prompt = String(args.prompt ?? '')
   if (route.kind !== 'category') return skills + prompt
   const note = CATEGORY_PERSONA_NOTES[route.category]
+  if (note === undefined) throw new Error(`missing category persona note: ${route.category}`)
   const categoryBlock = `<omo-task-category category="${route.category}">\n${note}\n</omo-task-category>\n`
   return categoryBlock + skills + prompt
 }
@@ -340,38 +289,50 @@ function withPartialText(error, output) {
   return text.length === 0 ? error : `${error}\nPartial output before the run ended:\n${text}`
 }
 
-/** Settle a foreground run: collect its result, then dispose it. */
-async function settleForegroundRun(run) {
-  const [execution] = await Promise.allSettled([
-    run.result.then((result) => {
-      const error = stopReasonError(result)
-      if (error !== undefined) throw new Error(withPartialText(error, result.output))
-      return {
-        kind: 'foreground',
-        runId: run.id,
-        output: result.output,
-      }
-    }),
-  ])
-  const [disposal] = await Promise.allSettled([Promise.resolve().then(() => run.dispose())])
-  if (execution.status === 'rejected') {
-    if (disposal.status === 'rejected') {
-      throw new AggregateError(
-        [execution.reason, disposal.reason],
-        `subagent run failed: ${String(execution.reason)}; dispose failed: ${String(disposal.reason)}`,
-      )
+/** Settle a managed activation: collect its result, then dispose it. */
+async function settleForegroundRun(activation, signal) {
+  let removeAbort = () => {}
+  const aborted = signal === undefined ? undefined : new Promise((_, reject) => {
+    const onAbort = () => {
+      void activation.dispose().catch(() => {})
+      reject(signal.reason ?? new Error('subagent run aborted'))
     }
-    throw execution.reason
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    removeAbort = () => signal.removeEventListener('abort', onAbort)
+  })
+  let execution
+  try {
+    const result = await (aborted === undefined ? activation.result : Promise.race([activation.result, aborted]))
+    const error = stopReasonError(result)
+    if (error !== undefined) throw new Error(withPartialText(error, result.output))
+    execution = {
+      kind: 'foreground',
+      runId: activation.childId,
+      output: result.output,
+    }
+  } catch (error) {
+    removeAbort()
+    await activation.dispose().catch(() => {})
+    throw error
   }
+  removeAbort()
+  const [disposal] = await Promise.allSettled([Promise.resolve().then(() => activation.dispose())])
   if (disposal.status === 'rejected') throw disposal.reason
-  return execution.value
+  return execution
 }
 
-/** Map a settled one-shot run to the `ctx.jobs` outcome shape. */
-function runOutcome(result) {
+/** Map a settled activation to the `ctx.jobs` outcome shape. */
+export function runOutcome(result) {
   switch (result?.stopReason) {
     case 'completed':
-      return { status: 'completed', output: textBlocks(result.output) }
+      // dsh 0.2.1 took the former JobOutcome.output string under `result`;
+      // jobs-local stores only outcome.result, so keeping `output` drops the
+      // background subagent's final report.
+      return { status: 'completed', result: textBlocks(result.output) }
     case 'aborted':
       return { status: 'killed' }
     case 'error':
@@ -383,16 +344,16 @@ function runOutcome(result) {
   }
 }
 
-/** Settle a background one-shot run into a job outcome without importing dsh-subagent. */
-async function settleRun(run) {
+/** Settle one managed activation into a job outcome; never rejects. */
+async function settleActivation(activation) {
   let outcome
   try {
-    outcome = runOutcome(await run.result)
+    outcome = runOutcome(await activation.result)
   } catch (error) {
     outcome = { status: 'failed', detail: String(error) }
   }
   try {
-    await run.dispose()
+    await activation.dispose()
   } catch (error) {
     const prefix = outcome.detail === undefined ? '' : `${outcome.detail}; `
     return { status: 'failed', detail: `${prefix}dispose failed: ${String(error)}` }
@@ -400,52 +361,57 @@ async function settleRun(run) {
   return outcome
 }
 
-/** Settle pending startup without rejecting the job producer contract. */
-async function settleStart(start, signal) {
-  try {
-    return await settleRun(await start)
-  } catch (error) {
-    return signal.aborted
-      ? { status: 'killed' }
-      : { status: 'failed', detail: String(error) }
-  }
-}
-
-/** Prefer continuable background children; fall back to a one-shot `ctx.jobs` task. */
-async function startBackground(ctx, request, label, parent, exec) {
-  const provider = typeof ctx.subagents?.getProvider === 'function'
-    ? ctx.subagents.getProvider(PROVIDER)
-    : undefined
-  const canContinue = typeof ctx.subagents?.startContinuable === 'function'
-    && (provider === undefined || provider.prepareContinuable !== undefined)
-  if (canContinue) {
-    const { label: _label, ...continuableRequest } = request
-    void _label
-    const started = await ctx.subagents.startContinuable({
-      provider: PROVIDER,
-      label,
-      request: continuableRequest,
-      signal: exec.signal,
-    })
-    return { kind: 'continuable', subagentId: toSessionTaskId(started.childId) }
-  }
-
+/** Start and register a background subagent activation as an owned job. */
+function startBackground(ctx, request, label, parent, exec) {
   const jobs = ctx.jobs
   if (jobs === undefined) {
     throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
   }
+  // Start inside run(): the job registry has then passed ownership, controller
+  // and capacity preflight. A registration rejection therefore cannot leave an
+  // already-running child without a job id.
   const id = jobs.start({
     kind: 'subagent',
     label,
-    owner: parent,
+    owner: parent.id,
     run: () => {
       const controller = new AbortController()
-      const start = ctx.subagents.start(PROVIDER, { ...request, signal: controller.signal })
+      let activation
+      let state = INITIAL_BACKGROUND
+      const done = (async () => {
+        let outcome
+        try {
+          activation = await ctx.subagents.startActivation({
+            provider: PROVIDER,
+            label,
+            request,
+            signal: controller.signal,
+            delivery: 'caller',
+          })
+          state = transitionBackground(state, { type: 'start' })
+          if (state.phase === 'cancelling') {
+            await activation.dispose().catch(() => {})
+            outcome = { status: 'killed' }
+          } else {
+            outcome = await settleActivation(activation)
+            if (state.phase === 'cancelling') outcome = { status: 'killed' }
+          }
+        } catch (error) {
+          outcome = state.phase === 'cancelling' || controller.signal.aborted
+            ? { status: 'killed' }
+            : { status: 'failed', detail: String(error) }
+        }
+        state = transitionBackground(state, { type: 'settle', outcome })
+        return outcome
+      })()
       return {
         cancel: (reason) => {
+          if (state.phase === 'settled') return
+          state = transitionBackground(state, { type: 'cancel' })
           controller.abort(reason ?? 'background subagent task killed')
+          if (activation !== undefined) void activation.dispose().catch(() => {})
         },
-        done: settleStart(start, controller.signal),
+        done,
       }
     },
   })
@@ -454,17 +420,17 @@ async function startBackground(ctx, request, label, parent, exec) {
 
 /** Deliver a follow-up to an existing continuable child. */
 async function followup(ctx, args, taskId, parent, exec) {
-  if (typeof ctx.subagents?.followup !== 'function') {
+  if (typeof ctx.subagents?.sendMessage !== 'function') {
     throw new Error(
-      'task_id requires continuable subagent follow-up, but ctx.subagents.followup is unavailable in this composition; only fresh tasks are supported',
+      'task_id requires continuable subagent follow-up, but ctx.subagents.sendMessage is unavailable in this composition; only fresh tasks are supported',
     )
   }
   const promptText = renderLoadedSkills(args.load_skills) + String(args.prompt ?? '')
-  await ctx.subagents.followup(
+  await ctx.subagents.sendMessage(
     parent,
     taskId,
     [{ type: 'text', text: promptText }],
-    { source: { kind: 'user' }, signal: exec.signal },
+    { signal: exec.signal },
   )
   return { kind: 'continuable', subagentId: toSessionTaskId(taskId) }
 }
@@ -484,13 +450,20 @@ const TASK_PARAMETERS = {
   category: {
     type: 'string',
     description:
-      'Optional omo task category. Known: visual-engineering, deep, ultrabrain, quick, writing, git.',
+      `Optional omo task category. Known: ${KNOWN_CATEGORIES.join(', ')}.`,
   },
   subagent_type: {
     type: 'string',
     description:
       'Optional named specialist. Known: plan, oracle, librarian, explore, metis, momus, '
-      + 'multimodal-looker, sisyphus, hephaestus, atlas, sisyphus-junior.',
+      + 'multimodal-looker, athena, athena-junior, council-member, sisyphus, hephaestus, '
+      + 'atlas, sisyphus-junior.',
+  },
+  cwd: {
+    type: 'string',
+    description:
+      'Optional initial child directory for a fresh task. Use an absolute path when the caller must pin a review worktree; '
+      + 'omitted inherits the parent directory. Ignored for task_id follow-ups.',
   },
   load_skills: {
     type: 'array',
@@ -502,7 +475,7 @@ const TASK_PARAMETERS = {
   run_in_background: {
     type: 'boolean',
     description:
-      'Whether to run in the background and return a durable id immediately (bg_... or ses_...). '
+      'Whether to run in the background and return a durable bg_... id immediately; collect it with background_output. '
       + 'Defaults to false; set true when the result is not needed before the next action. '
       + 'Collect background ids with background_output after a completion notice.',
   },
@@ -567,20 +540,27 @@ async function executeTask(ctx, args, exec) {
 
   const label = labelFor(args)
   const request = {
-    label,
     prompt: [{ type: 'text', text: composeChildPrompt(route, args) }],
     parent,
   }
-  if (route.kind === 'subagent-type') {
-    request.toolFilter = SUBAGENT_TYPE_DEFS[route.subagentType].toolFilter
+  if (typeof args.cwd === 'string') {
+    const cwd = args.cwd.trim()
+    if (cwd === '') throw new Error('task cwd must not be blank')
+    request.cwd = cwd
   }
 
   if (args.run_in_background === true) {
     return startBackground(ctx, request, label, parent, exec)
   }
 
-  const run = await ctx.subagents.start(PROVIDER, { ...request, signal: exec.signal })
-  return settleForegroundRun(run)
+  const activation = await ctx.subagents.startActivation({
+    provider: PROVIDER,
+    label,
+    request,
+    signal: exec.signal,
+    delivery: 'caller',
+  })
+  return settleForegroundRun(activation, exec.signal)
 }
 
 function registerDelegationTool(ctx, toolName, description) {
@@ -600,7 +580,7 @@ export function apply(ctx) {
     'task',
     'Omo task delegation. Start a specialist (subagent_type) or category worker, '
     + 'or continue a child with task_id=ses_.... Foreground waits for the result; '
-    + 'background returns bg_... / ses_.... Collect bg_... with background_output '
+    + 'background returns bg_.... Collect bg_... with background_output '
     + 'only after a completion notice.',
   )
   registerDelegationTool(

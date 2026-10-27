@@ -17,6 +17,8 @@ export interface OmoRoleView {
 }
 
 /** Reactive snapshot exposed by the client role store. */
+export type OmoRolesErrorReason = 'not-ready' | 'unavailable' | 'host-refused' | 'transport-failed'
+
 export interface OmoRolesState {
   readonly defaultRole: string
   readonly roles: readonly OmoRoleView[]
@@ -28,6 +30,8 @@ export interface OmoRolesState {
   readonly loading: boolean
   readonly degraded: boolean
   readonly error: string | null
+  /** Closed machine-readable error reason; `error` remains the display message. */
+  readonly errorReason: OmoRolesErrorReason | null
 }
 
 /** One adapter-owned reasoning effort choice. */
@@ -62,9 +66,10 @@ export interface SessionPresetSummary {
 }
 
 /**
- * Read the session's agent-preset id. dsh 0.1.2 keeps it on
- * `projectionValues.agentPreset`; older list rows put it on the summary
- * itself. Empty / non-string values do not count.
+ * Read the session's agent-preset id. 0.2.1 keeps it on
+ * `projectionValues.agentPreset`; list rows without the projection surface
+ * may still carry it on the summary itself. Empty / non-string values do not
+ * count.
  */
 export function sessionAgentPreset(summary: SessionPresetSummary | undefined): string | undefined {
   const projected = summary?.projectionValues?.agentPreset

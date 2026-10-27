@@ -7,14 +7,17 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import {
+  apply,
   KNOWN_CATEGORIES,
   KNOWN_SUBAGENT_TYPES,
   renderLoadedSkills,
   resolveTaskRoute,
+  runOutcome,
   roleForDelegationCall,
   SUBAGENT_TYPE_DEFS,
   SUBAGENT_TYPE_TO_ROLE,
 } from '../presets/opencode-omo/task-shim.mjs'
+import { restrictionForRole, ROLE_TOOL_FILTERS } from '../presets/opencode-omo/delegation-restrictions.mjs'
 
 test('renderLoadedSkills returns an empty string for empty or missing input', () => {
   assert.equal(renderLoadedSkills([]), '')
@@ -29,6 +32,15 @@ test('renderLoadedSkills renders the exact <loaded_skills> child-prompt prefix',
       + 'Load and follow these skills first via the skill tool: frontend, ulw-plan.\n'
       + '</loaded_skills>\n',
   )
+})
+
+test('background outcomes use the 0.2.1 result field', () => {
+  assert.deepEqual(
+    runOutcome({ stopReason: 'completed', output: [{ type: 'text', text: 'PONG' }] }),
+    { status: 'completed', result: 'PONG' },
+  )
+  assert.deepEqual(runOutcome({ stopReason: 'aborted' }), { status: 'killed' })
+  assert.deepEqual(runOutcome({ stopReason: 'max-tokens' }), { status: 'failed', detail: 'max-tokens' })
 })
 
 test('resolveTaskRoute prefers task_id over every other routing input', () => {
@@ -182,4 +194,57 @@ test('roleForDelegationCall maps named tools and task() to omo roles', () => {
   assert.equal(roleForDelegationCall('task', { prompt: 'do a thing' }), 'sisyphus')
   assert.equal(roleForDelegationCall('task', { task_id: 'ses_123', subagent_type: 'oracle' }), undefined)
   assert.equal(roleForDelegationCall('subagent', {}), undefined)
+})
+
+
+test('background cancellation disposes a published activation and settles killed', async () => {
+  const tools = new Map()
+  let job
+  let disposeCalls = 0
+  let activationSignal
+  let activationCwd
+  let resolveResult
+  const activation = {
+    childId: 'ses_child',
+    result: new Promise((resolve) => { resolveResult = resolve }),
+    dispose: async () => { disposeCalls += 1; resolveResult({ stopReason: 'aborted', output: [] }) },
+  }
+  const ctx = {
+    tools: { register: (definition) => { tools.set(definition.name, definition) } },
+    jobs: {
+      start: (spec) => {
+        job = spec.run()
+        return 'job_cancel'
+      },
+    },
+    subagents: {
+      startActivation: async (spec) => { activationSignal = spec.signal; activationCwd = spec.request.cwd; return activation },
+    },
+  }
+  apply(ctx)
+  const parent = { id: 'ses_parent', session: { header: { origin: 'primary', cwd: '/tmp' } } }
+  const started = await tools.get('task').execute(
+    { prompt: 'wait', subagent_type: 'oracle', run_in_background: true, cwd: ' /review/wt ' },
+    { agent: parent, signal: new AbortController().signal },
+  )
+  assert.equal(started.kind, 'background')
+  await Promise.resolve()
+  job.cancel('test cancel')
+  assert.equal(activationSignal.aborted, true)
+  assert.equal(activationCwd, '/review/wt')
+  assert.ok(disposeCalls > 0, 'cancel must dispose the published activation without waiting for settlement')
+  assert.deepEqual(await job.done, { status: 'killed' })
+})
+
+
+test('resumed restrictions cover every named role and fail closed', () => {
+  assert.ok(restrictionForRole('oracle').deny.includes('hashline_edit'))
+  assert.ok(restrictionForRole('oracle').deny.includes('apply_patch'))
+  assert.ok(restrictionForRole('multimodal-looker').allow.includes('read'))
+  assert.ok(restrictionForRole('hephaestus').deny.includes('task'))
+  assert.ok(restrictionForRole('sisyphus').deny.includes('task'))
+  assert.equal(ROLE_TOOL_FILTERS.prometheus.deny.includes('apply_patch'), false)
+  assert.ok(ROLE_TOOL_FILTERS.oracle.deny.includes('hephaestus'))
+  assert.ok(ROLE_TOOL_FILTERS.oracle.deny.includes('hashline_edit'))
+  assert.ok(restrictionForRole(undefined).deny.includes('write'))
 })

@@ -1,39 +1,46 @@
 /**
  * Client role store: one reactive snapshot over the opencode-omo role data.
  *
- * Loopback browsers read/write through `settingsScope` (the canonical settings
- * transport). Non-loopback browsers get a memory-mode scope (`unavailable`), so
- * the store falls back to the authenticated `/opencode-omo` RPC channel the
- * host plugin registers through `connection.rpc.handle`.
+ * On 0.2.1 the role/session maps are the host row's own volatile config, read
+ * and written through the official settings form (`ctx.configForms.get`). That
+ * transport is authenticated by the harness's `/api` boundary on every browser,
+ * so the former private connection-RPC channel and its loopback/non-loopback
+ * split are gone.
  *
  * The store itself is React-free so the transport selection can be unit-tested
  * with plain Node; components subscribe through `useSyncExternalStore`.
+ *
+ * All writes go through `reduce` via `dispatch`; the form subscription, save
+ * handlers and UI handlers only emit events. Error states carry a closed
+ * machine-readable reason in addition to the display message.
  */
 
 import { OMO_DEFAULT_ROLE, OMO_ROLES } from '../core/omo-roles.ts'
-import { normalizeOmoSettingsSection, type OmoSettingsSection } from '../core/omo-settings.ts'
-import { OMO_RPC_CHANNEL, OMO_RPC_ENDPOINTS } from '../core/omo-rpc.ts'
+import { normalizeOmoSettingsSection } from '../core/omo-settings.ts'
+import type { OmoSettingsSection } from '../core/omo-settings.ts'
 import type { OmoRoleConfig } from '../core/omo-roles.ts'
-import type { OmoModelSelection, OmoRolesState, OmoRoleView } from './omo-wire.ts'
+import type { OmoModelSelection, OmoRolesErrorReason, OmoRolesState, OmoRoleView } from './omo-wire.ts'
 
-/** The settings-scope face this client consumes. */
-export interface OmoSettingsScope {
-  getSnapshot(): { status: string; value?: OmoSettingsSection }
+/** The official settings form face this client consumes (see `ConfigForm`). */
+export interface OmoConfigForm {
+  getSnapshot(): {
+    readonly status: 'loading' | 'ready' | 'unavailable'
+    readonly value?: OmoSettingsSection
+    readonly writable?: boolean
+  }
   subscribe(listener: () => void): () => void
-  set(field: 'roles' | 'sessions', value: unknown): Promise<void>
+  set(field: 'roles' | 'sessions', value: unknown): Promise<boolean>
 }
 
-/** Result shape returned by the connection RPC caller. */
-export interface OmoRpcResultLike {
-  readonly ok: boolean
-  readonly value?: unknown
-  readonly error?: { readonly code?: string; readonly message?: string }
-}
+type SnapshotChanges = Partial<Pick<OmoRolesState, 'configs' | 'sessions' | 'currentRole'>>
 
-/** The connection rpc face the remote-browser fallback calls through. */
-export interface OmoRpcCaller {
-  call(channel: string, endpoint: string, payload: unknown): Promise<OmoRpcResultLike>
-}
+type StoreEvent =
+  | { readonly type: 'snapshot/loading' }
+  | { readonly type: 'snapshot/unavailable' }
+  | { readonly type: 'snapshot/ready'; readonly section: OmoSettingsSection; readonly currentRole: string }
+  | { readonly type: 'save/optimistic'; readonly changes: SnapshotChanges }
+  | { readonly type: 'save/failed'; readonly reason: OmoRolesErrorReason; readonly message: string }
+  | { readonly type: 'settings/not-ready' }
 
 const EMPTY_STATE: OmoRolesState = {
   defaultRole: OMO_DEFAULT_ROLE,
@@ -45,47 +52,50 @@ const EMPTY_STATE: OmoRolesState = {
   loading: true,
   degraded: false,
   error: null,
+  errorReason: null,
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function normalizeDefaults(raw: unknown): Record<string, OmoModelSelection | null> {
-  const out: Record<string, OmoModelSelection | null> = {}
-  if (!isRecord(raw)) return out
-  for (const [role, value] of Object.entries(raw)) {
-    if (value === null) {
-      out[role] = null
-      continue
-    }
-    if (!isRecord(value)) continue
-    const provider = value.provider
-    const model = value.model
-    if (typeof provider !== 'string' || provider === '' || typeof model !== 'string' || model === '') continue
-    const reasoningEffort = value.reasoningEffort
-    out[role] = {
-      provider,
-      model,
-      ...(typeof reasoningEffort === 'string' && reasoningEffort !== '' ? { reasoningEffort } : {}),
+function reduce(state: OmoRolesState, event: StoreEvent): OmoRolesState {
+  switch (event.type) {
+    case 'snapshot/loading':
+      return { ...state, loading: true, degraded: false }
+    case 'snapshot/unavailable':
+      return {
+        ...state,
+        loading: false,
+        degraded: true,
+        error: 'opencode-omo settings unavailable in this browser',
+        errorReason: 'unavailable',
+      }
+    case 'snapshot/ready':
+      return {
+        ...state,
+        roles: OMO_ROLES,
+        configs: event.section.roles,
+        sessions: event.section.sessions,
+        currentRole: event.currentRole,
+        loading: false,
+        degraded: false,
+        error: null,
+        errorReason: null,
+      }
+    case 'save/optimistic':
+      return { ...state, ...event.changes, error: null, errorReason: null }
+    case 'save/failed':
+      return { ...state, error: event.message, errorReason: event.reason }
+    case 'settings/not-ready':
+      return {
+        ...state,
+        loading: false,
+        degraded: true,
+        error: 'opencode-omo settings are not ready in this browser',
+        errorReason: 'not-ready',
+      }
+    default: {
+      const never: never = event
+      return never
     }
   }
-  return out
-}
-
-function normalizeConfigs(raw: unknown): Record<string, OmoRoleConfig> {
-  return normalizeOmoSettingsSection({ roles: raw }).roles
-}
-
-function normalizeCatalogRoles(raw: unknown): readonly OmoRoleView[] {
-  if (!Array.isArray(raw)) return OMO_ROLES
-  const roles = raw.filter((entry): entry is OmoRoleView => isRecord(entry)
-    && typeof entry.id === 'string'
-    && typeof entry.displayName === 'string'
-    && (entry.mode === 'primary' || entry.mode === 'subagent' || entry.mode === 'all')
-    && typeof entry.description === 'string'
-    && typeof entry.fallbackHint === 'string')
-  return roles.length > 0 ? roles : OMO_ROLES
 }
 
 /**
@@ -95,13 +105,11 @@ function normalizeCatalogRoles(raw: unknown): readonly OmoRoleView[] {
 export class OmoRolesStore {
   private state: OmoRolesState = { ...EMPTY_STATE }
   private readonly listeners = new Set<() => void>()
-  private unsubscribeScope: (() => void) | undefined
+  private unsubscribeForm: (() => void) | undefined
   private started = false
-  private loadingRemote = false
 
   constructor(
-    private readonly scope: OmoSettingsScope | undefined,
-    private readonly rpc: OmoRpcCaller | undefined,
+    private readonly form: OmoConfigForm | undefined,
     private readonly sessionId: string | undefined,
   ) {}
 
@@ -114,176 +122,144 @@ export class OmoRolesStore {
     return () => { this.listeners.delete(listener) }
   }
 
-  /** Start scope subscription and the initial remote catalog read. Idempotent. */
+  /** Start form subscription and the initial read. Idempotent. */
   start(): () => void {
     if (this.started) return () => {}
     this.started = true
-    if (this.scope !== undefined) {
-      this.unsubscribeScope = this.scope.subscribe(() => { this.refreshFromScope() })
+    if (this.form !== undefined) {
+      this.unsubscribeForm = this.form.subscribe(() => { this.refresh() })
     }
-    this.refreshFromScope()
-    void this.loadRemoteCatalog()
+    this.refresh()
     return () => {
-      this.unsubscribeScope?.()
-      this.unsubscribeScope = undefined
+      this.unsubscribeForm?.()
+      this.unsubscribeForm = undefined
       this.started = false
     }
   }
 
   /** Persist one session's role. */
   async setRole(sessionId: string, role: string): Promise<void> {
-    const snapshot = this.scope?.getSnapshot()
-    if (this.scope !== undefined && snapshot?.status === 'ready') {
-      const section = snapshot.value ?? { roles: {}, sessions: {} }
-      const sessions = { ...section.sessions, [sessionId]: role }
-      this.publish({ ...this.state, sessions, currentRole: role, error: null })
-      try {
-        await this.scope.set('sessions', sessions)
-      } catch (cause) {
-        this.refreshFromScope()
-        this.publish({ ...this.state, error: cause instanceof Error ? cause.message : String(cause) })
-        throw cause
-      }
-      return
+    const form = this.readyForm()
+    const sessions = { ...this.storedSessions(), [sessionId]: role }
+    this.dispatch({ type: 'save/optimistic', changes: { sessions: { ...this.state.sessions, [sessionId]: role }, currentRole: role } })
+    let accepted
+    try {
+      accepted = await form.set('sessions', sessions)
+    } catch (cause) {
+      this.fail('transport-failed', cause)
+      throw cause
     }
-    if (this.rpc !== undefined) {
-      try {
-        const result = await this.rpc.call(OMO_RPC_CHANNEL, OMO_RPC_ENDPOINTS.roleSet, { sessionId, role })
-        if (!result.ok) throw new Error(result.error?.message ?? 'role/set failed')
-        this.publish({
-          ...this.state,
-          sessions: { ...this.state.sessions, [sessionId]: role },
-          currentRole: role,
-          degraded: false,
-          error: null,
-        })
-      } catch (cause) {
-        this.publish({ ...this.state, error: cause instanceof Error ? cause.message : String(cause) })
-        throw cause
-      }
-      return
+    if (!accepted) {
+      const error = new Error('the Host refused the role change')
+      this.fail('host-refused', error)
+      throw error
     }
-    const error = new Error('opencode-omo settings unavailable in this browser')
-    this.publish({ ...this.state, degraded: true, error: error.message })
-    throw error
   }
 
   /** Persist one role's model/fallback configuration. */
   async setRoleConfig(role: string, config: OmoRoleConfig): Promise<void> {
-    const snapshot = this.scope?.getSnapshot()
-    if (this.scope !== undefined && snapshot?.status === 'ready') {
-      const section = snapshot.value ?? { roles: {}, sessions: {} }
-      const roles = { ...section.roles, [role]: config }
-      this.publish({ ...this.state, configs: { ...this.state.configs, [role]: config }, error: null })
-      try {
-        await this.scope.set('roles', roles)
-      } catch (cause) {
-        this.refreshFromScope()
-        this.publish({ ...this.state, error: cause instanceof Error ? cause.message : String(cause) })
-        throw cause
-      }
-      return
+    const form = this.readyForm()
+    const section = this.section()
+    const current = section.roles[role] ?? { fallbackModels: [] as const }
+    const next = { ...current, ...config }
+    const { followSession, ...storedBase } = next
+    // Stored shape: model:null is the explicit "follow session" sentinel; an
+    // omitted model is the distinct omo-default state. Fallback/effort edits
+    // therefore must not silently turn a default primary into follow-session.
+    const stored = {
+      ...storedBase,
+      ...(followSession === true
+        ? { model: null }
+        : next.model === undefined
+          ? {}
+          : { model: next.model }),
     }
-    if (this.rpc !== undefined) {
-      try {
-        const result = await this.rpc.call(OMO_RPC_CHANNEL, OMO_RPC_ENDPOINTS.roleConfigSet, { role, config })
-        if (!result.ok) throw new Error(result.error?.message ?? 'role-config/set failed')
-        const saved = isRecord(result.value) && isRecord(result.value.config)
-          ? normalizeConfigs({ [role]: result.value.config })[role]
-          : undefined
-        this.publish({
-          ...this.state,
-          configs: { ...this.state.configs, [role]: saved ?? config },
-          degraded: false,
-          error: null,
-        })
-      } catch (cause) {
-        this.publish({ ...this.state, error: cause instanceof Error ? cause.message : String(cause) })
-        throw cause
-      }
-      return
-    }
-    const error = new Error('opencode-omo settings unavailable in this browser')
-    this.publish({ ...this.state, degraded: true, error: error.message })
-    throw error
-  }
-
-  /** Re-read configs/sessions from the settings scope. */
-  private refreshFromScope(): void {
-    const snapshot = this.scope?.getSnapshot()
-    if (snapshot === undefined) return
-    if (snapshot.status === 'ready') {
-      const section = snapshot.value ?? { roles: {}, sessions: {} }
-      this.publish({
-        ...this.state,
-        configs: section.roles,
-        sessions: section.sessions,
-        currentRole: this.sessionId === undefined ? OMO_DEFAULT_ROLE : (section.sessions[this.sessionId] ?? OMO_DEFAULT_ROLE),
-        loading: false,
-        degraded: false,
-        error: null,
-      })
-      return
-    }
-    if (snapshot.status === 'unavailable' && this.rpc === undefined) {
-      this.publish({
-        ...this.state,
-        loading: false,
-        degraded: true,
-        error: 'opencode-omo settings unavailable in this browser',
-      })
-    }
-  }
-
-  /** Load role catalog + defaults through the authenticated RPC channel. */
-  private async loadRemoteCatalog(): Promise<void> {
-    if (this.rpc === undefined || this.loadingRemote) return
-    this.loadingRemote = true
+    const roles = { ...this.storedRoles(), [role]: stored }
+    this.dispatch({ type: 'save/optimistic', changes: { configs: { ...section.roles, [role]: next } } })
+    let accepted
     try {
-      const result = await this.rpc.call(OMO_RPC_CHANNEL, OMO_RPC_ENDPOINTS.catalogGet, this.sessionId === undefined ? {} : { sessionId: this.sessionId })
-      if (result.ok && isRecord(result.value)) {
-        const value = result.value
-        const next: OmoRolesState = {
-          ...this.state,
-          defaultRole: typeof value.defaultRole === 'string' ? value.defaultRole : OMO_DEFAULT_ROLE,
-          roles: normalizeCatalogRoles(value.roles),
-          configs: normalizeConfigs(value.configs),
-          defaults: normalizeDefaults(value.defaults),
-          currentRole: typeof value.currentRole === 'string' ? value.currentRole : this.state.currentRole,
-          loading: false,
-          degraded: false,
-          error: null,
-        }
-        this.publish(next)
-        // On loopback the settings scope is authoritative for configs/sessions.
-        this.refreshFromScope()
-      } else {
-        this.remoteFailed(result.error?.message ?? 'catalog/get failed')
-      }
+      accepted = await form.set('roles', roles)
     } catch (cause) {
-      this.remoteFailed(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      this.loadingRemote = false
+      this.fail('transport-failed', cause)
+      throw cause
+    }
+    if (!accepted) {
+      const error = new Error('the Host refused the role configuration')
+      this.fail('host-refused', error)
+      throw error
     }
   }
 
-  private remoteFailed(message: string): void {
-    if (this.scope?.getSnapshot().status === 'ready') {
-      // Loopback still works without the remote catalog (defaults stay empty).
-      this.publish({ ...this.state, loading: false, degraded: false })
+  /** Re-read configs/sessions from the settings form. */
+  private refresh(): void {
+    const snapshot = this.form?.getSnapshot()
+    if (snapshot === undefined) {
+      this.dispatch({ type: 'snapshot/unavailable' })
       return
     }
-    this.publish({ ...this.state, loading: false, degraded: true, error: message })
+    if (snapshot.status === 'ready') {
+      const section = normalizeOmoSettingsSection(snapshot.value)
+      this.dispatch({
+        type: 'snapshot/ready',
+        section,
+        currentRole: this.sessionId === undefined ? OMO_DEFAULT_ROLE : (section.sessions[this.sessionId] ?? OMO_DEFAULT_ROLE),
+      })
+      return
+    }
+    if (snapshot.status === 'unavailable') {
+      this.dispatch({ type: 'snapshot/unavailable' })
+      return
+    }
+    this.dispatch({ type: 'snapshot/loading' })
   }
 
-  private publish(next: OmoRolesState): void {
-    this.state = next
-    for (const listener of [...this.listeners]) {
-      try {
-        listener()
-      } catch {
-        // A throwing listener must not prevent the other listeners.
-      }
+  private section(): OmoSettingsSection {
+    return normalizeOmoSettingsSection(this.form?.getSnapshot().value)
+  }
+
+  /** A form that has received the Host's first accepted section and accepts writes. */
+  private readyForm(): OmoConfigForm {
+    const snapshot = this.form?.getSnapshot()
+    if (this.form === undefined || snapshot === undefined || snapshot.status !== 'ready' || snapshot.writable !== true) {
+      this.dispatch({ type: 'settings/not-ready' })
+      throw new Error('opencode-omo settings are not ready in this browser')
     }
+    return this.form
+  }
+
+  private fail(reason: OmoRolesErrorReason, cause: unknown): void {
+    this.refresh()
+    this.dispatch({
+      type: 'save/failed',
+      reason,
+      message: cause instanceof Error ? cause.message : String(cause),
+    })
+  }
+
+  /** Stored role map, preserving other roles' null/omitted follow-session shape. */
+  private storedRoles(): Record<string, unknown> {
+    const value = this.form?.getSnapshot().value as { roles?: unknown } | undefined
+    return value !== null && typeof value === 'object' && value.roles !== null && typeof value.roles === 'object'
+      ? { ...value.roles as Record<string, unknown> }
+      : {}
+  }
+
+  /** Stored session map, preserving entries the runtime normalizer would drop. */
+  private storedSessions(): Record<string, string> {
+    const value = this.form?.getSnapshot().value as { sessions?: unknown } | undefined
+    return value !== null && typeof value === 'object' && value.sessions !== null && typeof value.sessions === 'object'
+      ? { ...value.sessions as Record<string, string> }
+      : {}
+  }
+
+  /** The only writer of reactive state. */
+  private dispatch(event: StoreEvent): void {
+    const next = reduce(this.state, event)
+    if (next === this.state) return
+    this.state = next
+    for (const listener of this.listeners) listener()
   }
 }
+
+/** Local type re-export kept for component props that only need the model row. */
+export type { OmoModelSelection }

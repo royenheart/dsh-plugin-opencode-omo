@@ -1,3 +1,9 @@
+> Historical audit (2026-08-15, dsh 0.1.2-alpha.2 era). The current shipped
+> surface and dsh-side patch are documented in the root README, `design.md`, and
+> `patches/README.md`; this file is retained as bench/audit provenance.
+>
+> Current upstream pin: see README "Version baseline" / `alignment.json`.
+
 # opencode-omo 与 opencode + omo 对齐审计（2026-08-15，修复轮次后）
 
 审计对象：`presets/opencode-omo/`、`src/`、`cordis.patch.yml`、`driver.mjs`、`tests/`。

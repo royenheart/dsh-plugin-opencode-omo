@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fallbackRetryable, gateToolCall, opencodeUsesPatch, persistPlanFile, systemPromptFor } from '../presets/opencode-omo/driver.mjs'
+import { fallbackRetryable, gateToolCall, opencodeTools, opencodeUsesPatch, persistPlanFile, systemPromptFor } from '../presets/opencode-omo/driver.mjs'
 import { renderRulesFor } from '../presets/opencode-omo/rules.mjs'
 
 function roleFace(role = 'sisyphus') {
@@ -26,14 +26,14 @@ function mockAgent(cwd, events = [], model = 'deepseek-v4') {
     session: {
       id: 'session-test',
       header: { cwd, createdAt: 1234567890 },
-      events,
+      snapshotEvents: () => events,
     },
     options: { provider: 'deepseek-official', model },
   }
 }
 
 function mockState() {
-  return { fallbackAttempts: new Map(), resolvedRoutes: new Map(), lastRouteTurn: 0, ultraworkTurn: 0 }
+  return { fallbackAttempts: new Map(), resolvedRoutes: new Map(), assembledRoutes: new Map(), lastRouteTurn: 0, ultraworkTurn: 0 }
 }
 
 test('complete system prompt folds omo rules in despite suppressed runtime context', () => {
@@ -90,6 +90,22 @@ test('plan mode injects the verbatim opencode plan-mode prompt with a real plan 
   }
 })
 
+test('plan mode reads the public plan projection before the event log', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-plan-projection-'))
+  try {
+    const ctx = {
+      tools: { schemas: () => [] },
+      get: service => service === 'sessionProjections'
+        ? { stateOf: (_session, key) => key === 'plan' ? { active: true, activeAtLastHeader: null } : undefined }
+        : undefined,
+    }
+    const prompt = systemPromptFor(ctx, roleFace(), mockState(), mockAgent(cwd, []))
+    assert.match(prompt, /Plan mode is active/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
 test('leaving plan mode after a logged plan header injects the build-switch prompt once', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-buildswitch-'))
   try {
@@ -126,6 +142,135 @@ test('approved plans persist at the opencode path and feed the build-switch remi
   }
 })
 
+test('request catalog applies hidden, model-family, and child send_message filters', () => {
+  const tools = [
+    { name: 'task' },
+    { name: 'list_agents' },
+    { name: 'subagent' },
+    { name: 'apply_patch' },
+    { name: 'edit' },
+    { name: 'hashline_edit' },
+    { name: 'send_message' },
+  ]
+  assert.deepEqual(opencodeTools(tools, 'deepseek-v4').map(tool => tool.name), ['task', 'edit', 'hashline_edit'])
+  assert.deepEqual(opencodeTools(tools, 'gpt-5.5').map(tool => tool.name), ['task', 'apply_patch', 'hashline_edit'])
+  assert.deepEqual(
+    opencodeTools(tools, 'deepseek-v4', undefined, true).map(tool => tool.name),
+    ['task', 'edit', 'hashline_edit', 'send_message'],
+  )
+  const readOnly = { deny: ['write', 'edit', 'apply_patch', 'hashline_edit', 'task'] }
+  assert.deepEqual(opencodeTools(tools, 'deepseek-v4', readOnly).map(tool => tool.name), [])
+  assert.deepEqual(opencodeTools(tools, 'gpt-5.5', readOnly).map(tool => tool.name), [])
+  assert.equal(opencodeTools(undefined, 'deepseek-v4'), undefined)
+})
+
+test('hephaestus prompt cache follows the current tool set', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-heph-cache-'))
+  try {
+    let description = 'delegate'
+    const ctx = {
+      tools: {
+        schemas: () => [
+          { name: 'task', description },
+          { name: 'send_message', description: 'return to parent' },
+        ],
+      },
+    }
+    const primary = systemPromptFor(ctx, roleFace('hephaestus'), mockState(), mockAgent(cwd, [], 'gpt-5.4'))
+    const childAgent = mockAgent(cwd, [], 'gpt-5.4')
+    childAgent.session.header.origin = 'subagent'
+    const child = systemPromptFor(ctx, roleFace('hephaestus'), mockState(), childAgent)
+    assert.doesNotMatch(primary, /\| send_message \|/)
+    assert.match(child, /\| send_message \|/)
+    description = 'delegate-v2'
+    const changed = systemPromptFor(ctx, roleFace('hephaestus'), mockState(), mockAgent(cwd, [], 'gpt-5.4'))
+    assert.match(changed, /delegate-v2/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('atlas prompt cache follows the current tool catalog', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-atlas-cache-'))
+  try {
+    let schemas = [{ name: 'task', description: 'delegate' }, { name: 'oracle', description: 'advisor' }]
+    const ctx = { tools: { schemas: () => schemas } }
+    const full = systemPromptFor(ctx, roleFace('atlas'), mockState(), mockAgent(cwd, [], 'claude-opus-4-7'))
+    schemas = [{ name: 'task', description: 'delegate' }]
+    const taskOnly = systemPromptFor(ctx, roleFace('atlas'), mockState(), mockAgent(cwd, [], 'claude-opus-4-7'))
+    schemas = [{ name: 'task', description: 'delegate' }, { name: 'oracle', description: 'advisor' }]
+    const workerAgent = mockAgent(cwd, [], 'claude-opus-4-7')
+    workerAgent.session.header.origin = 'subagent'
+    const worker = systemPromptFor(ctx, roleFace('atlas'), mockState(), workerAgent)
+    assert.match(full, /##### Option A/)
+    assert.match(full, /\*\*`oracle`\*\*/)
+    assert.match(taskOnly, /##### Option A/)
+    assert.doesNotMatch(taskOnly, /\*\*`oracle`\*\*/)
+    assert.doesNotMatch(worker, /##### Option A/)
+    assert.match(worker, /Sisyphus-Junior/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('prompt tool table never advertises tools the request catalog hides', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-prompt-table-'))
+  try {
+    const ctx = {
+      tools: {
+        schemas: () => [
+          { name: 'task', description: 'delegate' },
+          { name: 'list_agents', description: 'hidden' },
+          { name: 'apply_patch', description: 'patch' },
+          { name: 'edit', description: 'edit' },
+          { name: 'send_message', description: 'message' },
+        ],
+      },
+    }
+    const prompt = systemPromptFor(ctx, roleFace(), mockState(), mockAgent(cwd, [], 'deepseek-v4'))
+    assert.match(prompt, /\| task \|/)
+    assert.match(prompt, /\| edit \|/)
+    assert.doesNotMatch(prompt, /\| list_agents \|/)
+    assert.doesNotMatch(prompt, /\| apply_patch \|/)
+    assert.doesNotMatch(prompt, /\| send_message \|/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('delegated child prompt table includes the dsh return channel', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-child-table-'))
+  try {
+    const ctx = {
+      tools: {
+        schemas: () => [
+          { name: 'task', description: 'delegate' },
+          { name: 'list_agents', description: 'hidden' },
+          { name: 'send_message', description: 'message' },
+        ],
+      },
+    }
+    const agent = mockAgent(cwd, [], 'deepseek-v4')
+    agent.session.header.origin = 'subagent'
+    const prompt = systemPromptFor(ctx, roleFace(), mockState(), agent)
+    assert.match(prompt, /\| send_message \|/)
+    assert.doesNotMatch(prompt, /\| list_agents \|/)
+    const junior = systemPromptFor(ctx, roleFace('sisyphus-junior'), mockState(), agent)
+    assert.match(junior, /\| send_message \|/)
+    assert.match(junior, /Sisyphus-Junior/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('send_message survives a narrow child allow list but not the primary gate', () => {
+  assert.equal(gateToolCall('send_message', 'deepseek-v4', { allow: ['read', 'read_image'] }, true), undefined)
+  assert.match(
+    gateToolCall('send_message', 'deepseek-v4', { allow: ['read', 'read_image'] }, false),
+    /not available to this delegated role/,
+  )
+})
+
 test('fallback advances only on omo-style retryable failure codes', () => {
   assert.equal(fallbackRetryable({ code: 'RATE_LIMIT' }), true)
   assert.equal(fallbackRetryable({ code: 'QUOTA' }), true)
@@ -152,9 +297,46 @@ test('tool gate matches opencode model-family gating on both sides', () => {
 test('hephaestus routes to the extracted GPT-5.5 family prompt', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-hephaestus-'))
   try {
-    const ctx = { tools: { schemas: () => [] } }
+    const ctx = { tools: { schemas: () => [{ name: 'task', description: 'delegate' }] } }
     const prompt = systemPromptFor(ctx, roleFace('hephaestus'), mockState(), mockAgent(cwd, [], 'gpt-5.5'))
     assert.match(prompt, /You are Hephaestus, an autonomous deep worker based on GPT-5\.5/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('primary sisyphus keeps the family prompt when the schema provider fails', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-sisyphus-schema-fail-'))
+  try {
+    const ctx = { tools: { schemas: () => { throw new Error('schema unavailable') } } }
+    const prompt = systemPromptFor(ctx, roleFace(), mockState(), mockAgent(cwd, [], 'claude-opus-4-7'))
+    assert.match(prompt, /Powerful AI Agent with orchestration capabilities from OhMyOpenCode/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('restricted sisyphus workers use the junior prompt', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-sisyphus-worker-'))
+  try {
+    const ctx = { tools: { schemas: () => [{ name: 'read', description: 'read' }] } }
+    const agent = mockAgent(cwd, [], 'claude-opus-4-7')
+    agent.session.header.origin = 'subagent'
+    const prompt = systemPromptFor(ctx, roleFace('sisyphus'), mockState(), agent)
+    assert.match(prompt, /Sisyphus-Junior/)
+    assert.doesNotMatch(prompt, /task\(category=/)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('primary atlas keeps its role body without task', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'omo-atlas-primary-'))
+  try {
+    const ctx = { tools: { schemas: () => [{ name: 'read', description: 'read' }] } }
+    const prompt = systemPromptFor(ctx, roleFace('atlas'), mockState(), mockAgent(cwd, [], 'claude-opus-4-7'))
+    assert.match(prompt, /You are Atlas - the Master Orchestrator/)
+    assert.doesNotMatch(prompt, /Sisyphus-Junior/)
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
@@ -163,7 +345,7 @@ test('hephaestus routes to the extracted GPT-5.5 family prompt', () => {
 test('atlas routes to the extracted opus-4-7 family prompt', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-atlas-'))
   try {
-    const ctx = { tools: { schemas: () => [] } }
+    const ctx = { tools: { schemas: () => [{ name: 'task', description: 'delegate' }] } }
     const prompt = systemPromptFor(ctx, roleFace('atlas'), mockState(), mockAgent(cwd, [], 'claude-opus-4-7'))
     assert.match(prompt, /You are Atlas - the Master Orchestrator/)
     assert.match(prompt, /running on Claude Opus 4\.7/)
@@ -175,7 +357,7 @@ test('atlas routes to the extracted opus-4-7 family prompt', () => {
 test('atlas routes generic Claude to the default variant, not opus-4-7', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-atlas-default-'))
   try {
-    const ctx = { tools: { schemas: () => [] } }
+    const ctx = { tools: { schemas: () => [{ name: 'task', description: 'delegate' }] } }
     const prompt = systemPromptFor(ctx, roleFace('atlas'), mockState(), mockAgent(cwd, [], 'claude-sonnet-4-6'))
     assert.match(prompt, /You are Atlas - the Master Orchestrator from OhMyOpenCode/)
     assert.doesNotMatch(prompt, /running on Claude Opus 4\.7/)
@@ -187,7 +369,7 @@ test('atlas routes generic Claude to the default variant, not opus-4-7', () => {
 test('hephaestus GPT-5.6 hyphen id uses the gpt-5-6 variant', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-heph-56-'))
   try {
-    const ctx = { tools: { schemas: () => [] } }
+    const ctx = { tools: { schemas: () => [{ name: 'task', description: 'delegate' }] } }
     const prompt = systemPromptFor(ctx, roleFace('hephaestus'), mockState(), mockAgent(cwd, [], 'gpt-5-6'))
     assert.match(prompt, /You are Hephaestus, an autonomous deep worker based on GPT-5\.6/)
     assert.match(prompt, /todo_write/)
@@ -200,7 +382,7 @@ test('hephaestus GPT-5.6 hyphen id uses the gpt-5-6 variant', () => {
 test('unknown model families use the omo dynamic Sisyphus fallback prompt', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-fallback-'))
   try {
-    const ctx = { tools: { schemas: () => [] } }
+    const ctx = { tools: { schemas: () => [{ name: 'task', description: 'delegate' }] } }
     const prompt = systemPromptFor(ctx, roleFace(), mockState(), mockAgent(cwd, [], 'deepseek-v4'))
     assert.match(prompt, /Powerful AI Agent with orchestration capabilities from OhMyOpenCode/)
     assert.match(prompt, /Phase 2A - Exploration & Research/)
@@ -210,7 +392,7 @@ test('unknown model families use the omo dynamic Sisyphus fallback prompt', () =
   }
 })
 
-test('maxSteps section appears in the system prompt at the ceiling on stock 0.1.2', () => {
+test('maxSteps section appears in the system prompt at the ceiling on a stock host', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'omo-maxsteps-'))
   try {
     // step counting: nextPosition = last step/start + 1; three starts propose step 4.

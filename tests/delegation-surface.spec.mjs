@@ -77,7 +77,7 @@ test('pre-step rewrites tool-jobs notices and leaves other messages alone', asyn
   apply(ctx)
   assert.equal(decisions.length, 1)
   const notice = {
-    source: { kind: 'plugin', plugin: 'tool-jobs', form: 'notice', summary: 'done' },
+    source: { kind: 'tool-jobs', form: 'notice', summary: 'done' },
     content: [{ type: 'text', text: 'background job j1 (bash: test) finished [status: completed]. Read its output with job_output.' }],
   }
   const user = {
@@ -103,6 +103,56 @@ test('applyOmoDelegationCatalog drops hidden dsh execution-layer names', () => {
   assert.deepEqual(catalog, [kept, { name: 'oracle' }])
 })
 
+test('applyOmoDelegationCatalog keeps send_message only for delegated children', () => {
+  const tools = [
+    { name: 'task' },
+    { name: 'send_message' },
+    { name: 'list_agents' },
+    { name: 'job_list' },
+  ]
+  assert.deepEqual(applyOmoDelegationCatalog(tools).map(tool => tool.name), ['task'])
+  assert.deepEqual(
+    applyOmoDelegationCatalog(tools, { allowSendMessage: true }).map(tool => tool.name),
+    ['task', 'send_message'],
+  )
+})
+
+test('send_message pre-execute is allowed for a delegated child and denied for the primary', async () => {
+  const listeners = new Map()
+  const ctx = {
+    jobs: {},
+    tools: { register() {} },
+    on(event, listener) { listeners.set(event, listener) },
+  }
+  apply(ctx)
+  const listener = listeners.get('tools/pre-execute')
+  const next = () => Promise.resolve({ kind: 'accept' })
+  const childExec = { name: 'send_message', agent: { session: { header: { origin: 'subagent' } } } }
+  assert.deepEqual(await listener(childExec, next), { kind: 'accept' })
+  const primaryExec = { name: 'send_message', agent: { session: { header: {} } } }
+  assert.equal((await listener(primaryExec, next)).kind, 'deny')
+  const hiddenExec = { name: 'list_agents', agent: { session: { header: { delegationDepth: 1 } } } }
+  assert.equal((await listener(hiddenExec, next)).kind, 'deny')
+})
+
+test('background_output appends the producer terminal result', async () => {
+  const ctx = mockDelegationCtx({
+    read(id) {
+      return {
+        chunks: [],
+        job: { id, status: 'completed' },
+        ...(id === 'job-result' ? { result: 'RESULT' } : {}),
+      }
+    },
+  })
+  apply(ctx)
+  const tool = ctx.registered.get('background_output')
+  const collected = await tool.execute({ task_id: 'bg_job-result' }, { agent: {} })
+  assert.equal(collected.text, 'RESULT')
+  assert.equal(collected.status, 'completed')
+  assert.equal(collected.task_id, 'bg_job-result')
+})
+
 function mockDelegationCtx(jobs) {
   const registered = new Map()
   return {
@@ -120,7 +170,7 @@ function mockDelegationCtx(jobs) {
 test('background_output rejects ses_ ids and rewrites collected job ids', async () => {
   const ctx = mockDelegationCtx({
     read(id) {
-      return { text: `out-${id}`, snapshot: { id, status: 'completed' } }
+      return { chunks: [{ at: 0, text: `out-${id}` }], job: { id, status: 'completed' } }
     },
   })
   apply(ctx)

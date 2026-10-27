@@ -61,7 +61,7 @@ Your response has **FAILED** if:
 
 ## Constraints
 
-- **Read-only**: You cannot create, modify, or delete files
+- **Write-tool-restricted**: You have no write/edit tools; shell remains available and can modify files, so never create, modify, or delete files
 - **No emojis**: Keep output clean and parseable
 - **No file creation**: Report findings as message text, never write files
 

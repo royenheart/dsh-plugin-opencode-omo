@@ -12,6 +12,7 @@
 // call_omo_agent / task live in task-shim.mjs and share the same execute path.
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { isDelegatedSession } from './delegated-session.mjs'
 
 export const name = 'opencode-omo-delegation-surface'
 export const inject = ['tools', 'jobs']
@@ -54,9 +55,18 @@ export function fromOmoTaskId(id) {
   return { kind: 'raw', id: value }
 }
 
-export function applyOmoDelegationCatalog(tools) {
+export function applyOmoDelegationCatalog(tools, options = {}) {
   if (!Array.isArray(tools)) return tools
-  return tools.filter(tool => tool && typeof tool.name === 'string' && !HIDDEN.has(tool.name))
+  const allowSendMessage = options.allowSendMessage === true
+  return tools.filter(tool => {
+    if (!tool || typeof tool.name !== 'string') return false
+    if (!HIDDEN.has(tool.name)) return true
+    // dsh's continuable-subagent return path tells every child to call
+    // send_message; the primary surface keeps omo's task()/background_output
+    // entry points. Hiding send_message from a child leaves that instruction
+    // pointing at a tool the child cannot see.
+    return allowSendMessage && tool.name === 'send_message'
+  })
 }
 
 /** Rewrite dsh `tool:jobs` section copy into the omo collection names. */
@@ -92,7 +102,7 @@ export function rewriteJobCompletionNotice(text) {
 }
 
 function rewriteJobNoticeMessage(message) {
-  if (message?.source?.plugin !== 'tool-jobs' || message.source.form !== 'notice') return message
+  if (message?.source?.kind !== 'tool-jobs' || message.source.form !== 'notice') return message
   const blocks = Array.isArray(message.content) ? message.content : []
   let changed = false
   const content = blocks.map((block) => {
@@ -117,7 +127,7 @@ function presentJob(job) {
 }
 
 export function apply(ctx) {
-  ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
+  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const transformed = await next()
     const sections = Array.isArray(transformed.sections)
       ? transformed.sections.map((section) => {
@@ -128,7 +138,9 @@ export function apply(ctx) {
     return {
       ...transformed,
       sections,
-      tools: applyOmoDelegationCatalog(transformed.tools),
+      tools: applyOmoDelegationCatalog(transformed.tools, {
+        allowSendMessage: isDelegatedSession(context.agent),
+      }),
     }
   })
 
@@ -143,6 +155,9 @@ export function apply(ctx) {
 
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (HIDDEN.has(exec.name)) {
+      // Children need dsh's return channel; the primary surface still hides it
+      // so omo's task()/background_output interface stays the only entry point.
+      if (exec.name === 'send_message' && isDelegatedSession(exec)) return next()
       return {
         kind: 'deny',
         reason:
@@ -205,13 +220,18 @@ export function apply(ctx) {
       if (jobs === undefined) {
         throw new Error('background_output requires the dsh jobs service')
       }
+      const caller = exec.agent?.id
       if (args.wait === true && typeof jobs.wait === 'function') {
-        await jobs.wait(parsed.id, args.timeout_ms, exec.agent, exec.signal)
+        await jobs.wait(parsed.id, typeof args.timeout_ms === 'number' && args.timeout_ms > 0 ? args.timeout_ms : 30_000, caller, exec.signal)
       }
-      const read = jobs.read(parsed.id, exec.agent)
-      const job = presentJob(read.snapshot)
+      const read = jobs.read(parsed.id, caller)
+      const body = read.chunks
+        .filter(chunk => chunk.channel !== 'log')
+        .map(chunk => chunk.text)
+        .join('')
+      const job = presentJob(read.job)
       return {
-        text: read.text ?? '',
+        text: `${body}${read.result === undefined ? '' : read.result}`,
         task_id: job?.id ?? toBackgroundTaskId(parsed.id),
         status: job?.status ?? 'unknown',
       }
@@ -267,7 +287,7 @@ export function apply(ctx) {
       if (jobs === undefined) {
         throw new Error('background_cancel requires the dsh jobs service')
       }
-      const result = jobs.kill(parsed.id, exec.agent, 'background_cancel')
+      const result = jobs.kill(parsed.id, exec.agent?.id, 'background_cancel')
       return {
         outcome: result === 'already-finished' ? 'already-finished' : 'cancellation-requested',
         task_id: toBackgroundTaskId(parsed.id),

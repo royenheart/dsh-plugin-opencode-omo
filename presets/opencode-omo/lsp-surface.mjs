@@ -74,6 +74,19 @@ function optionalLsp(ctx) {
   }
 }
 
+async function resolveWorkspaceRoot(ctx, exec) {
+  try {
+    const service = ctx.get?.('workingDirectory')
+    if (service?.ensure !== undefined && exec.agent !== undefined) {
+      const cwd = await service.ensure(exec.agent, exec.signal)
+      if (typeof cwd === 'string' && cwd !== '') return cwd
+    }
+  } catch {
+    // Fall back to the session header.
+  }
+  return sessionCwd(exec)
+}
+
 function sessionCwd(exec) {
   const cwd = exec?.agent?.session?.header?.cwd
   return typeof cwd === 'string' && cwd.length > 0 ? cwd : undefined
@@ -127,7 +140,7 @@ async function executeNavigation(ctx, operation, args, exec) {
   }
   const filePath = filePathFrom(args)
   if (filePath === undefined) throw new Error('filePath is required')
-  const workspaceRoot = sessionCwd(exec)
+  const workspaceRoot = await resolveWorkspaceRoot(ctx, exec)
   if (workspaceRoot === undefined) {
     throw new Error('lsp tools require a session workspace cwd')
   }

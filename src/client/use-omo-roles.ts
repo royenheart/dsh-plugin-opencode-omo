@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import type { OmoRolesStore, OmoRpcCaller, OmoSettingsScope } from './omo-roles-store.ts'
+import type { OmoConfigForm, OmoRolesStore } from './omo-roles-store.ts'
 import { OmoRolesStore as RoleStore } from './omo-roles-store.ts'
 import type { OmoRolesState } from './omo-wire.ts'
 
@@ -18,13 +18,12 @@ export interface UseOmoRolesResult {
  * session id while the settings section reads the global configs.
  */
 export function useOmoRoles(
-  scope: OmoSettingsScope | undefined,
-  rpc: OmoRpcCaller | undefined,
+  form: OmoConfigForm | undefined,
   sessionId: string | undefined,
 ): UseOmoRolesResult {
   const store = useMemo(
-    () => new RoleStore(scope, rpc, sessionId),
-    [scope, rpc, sessionId],
+    () => new RoleStore(form, sessionId),
+    [form, sessionId],
   )
   useEffect(() => store.start(), [store])
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)

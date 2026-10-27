@@ -1,22 +1,23 @@
 /**
- * Pure normalization for the `opencode-omo-roles` settings section.
+ * Pure normalization for the `opencode-omo` settings section.
  *
- * The settings namespace stores two maps:
+ * The host row stores two maps:
  *
- *   opencode-omo-roles:
+ *   opencode-omo:
  *     roles:    { <role>: { model?, fallbackModels, maxSteps?, ultrawork? } }
  *     sessions: { <sessionId>: <role> }
  *
  * The host registry writes `model: null` for "follow the session model"; the
- * browser settings scope decodes that into the runtime shape used by the UI
- * (`model` omitted). This module owns that conversion so the client decode and
- * unit tests share one source of truth with no dsh imports.
+ * browser store decodes the stored section into the runtime shape used by the
+ * UI (`model` omitted) with {@link normalizeOmoSettingsSection}. This module
+ * owns that conversion so the client and its unit tests share one source of
+ * truth with no dsh imports.
  */
 
 import { isOmoRole, type OmoModelSelection, type OmoRoleConfig, type OmoUltraworkOverride, type StoredOmoRoleConfig } from './omo-roles.ts'
 
-/** Settings namespace id registered with `ctx.settings` / bound on the client. */
-export const OMO_ROLE_SETTINGS_NAMESPACE = 'opencode-omo-roles'
+/** Host row / settings namespace id addressed by the official settings Remote. */
+export const OMO_ROLE_SETTINGS_NAMESPACE = 'opencode-omo'
 
 /** Runtime settings-section shape consumed by the client. */
 export interface OmoSettingsSection {
@@ -54,6 +55,7 @@ function normalizeUltrawork(raw: unknown): OmoUltraworkOverride | undefined {
 
 function normalizeRoleConfig(raw: unknown): OmoRoleConfig | undefined {
   if (!isRecord(raw)) return undefined
+  const followSession = raw.model === null
   const model = raw.model === null || raw.model === undefined
     ? undefined
     : normalizeModelSelection(raw.model)
@@ -66,6 +68,7 @@ function normalizeRoleConfig(raw: unknown): OmoRoleConfig | undefined {
   const ultrawork = normalizeUltrawork(raw.ultrawork)
   return {
     ...(model === undefined ? {} : { model }),
+    ...(followSession ? { followSession: true } : {}),
     fallbackModels,
     ...(maxSteps === undefined ? {} : { maxSteps }),
     ...(ultrawork === undefined ? {} : { ultrawork }),

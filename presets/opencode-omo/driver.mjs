@@ -14,15 +14,18 @@
 // - Named specialist / task() children pin an omo role and keep this complete
 //   section (no static persona overlay), so they see `<env>` + the specialist
 //   body instead of the dsh harness identity.
-// - maxSteps + MAX_STEPS_PROMPT render as a system-prompt section at the
-//   ceiling (see `maxStepsSectionFor`); no dsh-side patch is used.
+// - maxSteps + MAX_STEPS_PROMPT use the patched request-only assistant tail
+//   when the installed loop advertises it, and the documented system-prompt
+//   section fallback otherwise (see `maxStepsSectionFor`).
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { applyOmoDelegationCatalog } from './delegation-surface.mjs'
+import { isDelegatedSession } from './delegated-session.mjs'
 import { applyOmoLspCatalog } from './lsp-surface.mjs'
+import { restrictionForRole } from './delegation-restrictions.mjs'
 import { renderRulesFor } from './rules.mjs'
-import { roleForDelegationCall } from './task-shim.mjs'
+import { KNOWN_CATEGORIES, roleForDelegationCall, toolRestrictionForDelegation } from './task-shim.mjs'
 
 export const name = 'opencode-omo-loop'
 
@@ -31,8 +34,16 @@ export const inject = ['systemPrompt', 'tools']
 const PERSONA_SECTION = 'deployment:persona'
 const PERSONA_ORDER = 0
 
-/** Role to pin on a child created inside the current named-tool / task() call. */
-const pendingChildRole = new AsyncLocalStorage()
+/** Role and inherited tool restriction for a child created inside the current named-tool / task() call. */
+const pendingChild = new AsyncLocalStorage()
+
+/** Whether the installed agent-loop advertises the request-only assistant prefill patch. */
+let assistantPrefillSupported = false
+
+/** Restriction pinned to a delegated child by its named tool / task(subagent_type). */
+const childRestrictions = new Map()
+/** Resumed children whose pin is missing/invalid use the read-only prompt role. */
+const childPromptRoles = new Map()
 
 const PROMPT_DIR = new URL('roles/prompts/', import.meta.url)
 const LEGACY_PROMPT_DIR = new URL('roles/', import.meta.url)
@@ -45,24 +56,41 @@ const planPromptCache = new Map()
 const rolePromptCache = new Map()
 const personaCache = new Map()
 
+/**
+ * Current plan state from the public `plan` session projection. The projection
+ * is registered by the composed plan-mode plugin; a detached test host without
+ * the projection keeps the explicit log fallback below.
+ */
+function planProjection(ctx, session) {
+  try {
+    return ctx?.get?.('sessionProjections')?.stateOf?.(session, 'plan')
+  } catch {
+    return undefined
+  }
+}
+
 /** dsh folds plan mode from the durable `plan/mode` event stream. */
-function planModeActive(session) {
-  const event = session.events.findLast(item => item.type === 'plan/mode')
+function planModeActive(ctx, session) {
+  const projected = planProjection(ctx, session)
+  if (projected !== undefined) return projected.active === true
+  const event = session.snapshotEvents().findLast(item => item.type === 'plan/mode')
   return event?.data?.active === true
 }
 
 /** Plan state at the last logged request header (mirrors dsh plan-mode narration). */
-function planModeAtLastHeader(session) {
+function planModeAtLastHeader(ctx, session) {
+  const projected = planProjection(ctx, session)
+  if (projected !== undefined) return projected.activeAtLastHeader ?? undefined
   let lastHeader = -1
   let index = 0
-  for (const event of session.events) {
+  for (const event of session.snapshotEvents()) {
     if (event.type === 'request/header') lastHeader = index
     index += 1
   }
   if (lastHeader < 0) return undefined
   let active
   for (index = 0; index < lastHeader; index += 1) {
-    const event = session.events[index]
+    const event = session.snapshotEvents()[index]
     if (event?.type === 'plan/mode') active = event.data?.active === true
   }
   return active
@@ -92,8 +120,8 @@ function planPrompt(file) {
   }
 }
 
-function activePlanPrompt(session) {
-  if (!planModeActive(session)) return undefined
+function activePlanPrompt(ctx, session) {
+  if (!planModeActive(ctx, session)) return undefined
   const template = planPrompt('plan-mode.txt') ?? planPrompt('plan.txt')
   if (template === undefined) return undefined
   if (!template.includes('${planInfo}')) return template
@@ -111,11 +139,11 @@ function buildSwitchPrompt() {
   return planPrompt('build-switch.txt')
 }
 
-function buildSwitchFor(session) {
+function buildSwitchFor(ctx, session) {
   // The step immediately after plan mode was committed off: the last logged
   // request header described plan mode, the current durable state does not.
-  if (planModeActive(session)) return undefined
-  if (planModeAtLastHeader(session) !== true) return undefined
+  if (planModeActive(ctx, session)) return undefined
+  if (planModeAtLastHeader(ctx, session) !== true) return undefined
   const plan = planFilePath(session)
   const reminder = buildSwitchPrompt() ?? ''
   if (plan === undefined || !existsSync(plan)) return reminder
@@ -196,11 +224,17 @@ function keyTriggersMarkdown() {
   return KEY_TRIGGERS.map(line => `- ${line}`).join('\n')
 }
 
-function delegationTableMarkdown() {
+function delegationTableMarkdown(tools) {
+  const available = new Set((Array.isArray(tools) ? tools : []).map(tool => tool?.name))
+  const rows = DELEGATION_TABLE.flatMap(([name, when]) => {
+    const parts = name.split(' / ').filter(part => available.has(part))
+    return parts.length === 0 ? [] : [[parts.join(' / '), when]]
+  })
+  if (rows.length === 0) return ''
   return [
     '| agent | use when |',
     '|---|---|',
-    ...DELEGATION_TABLE.map(([name, when]) => `| ${name} | ${when} |`),
+    ...rows.map(([name, when]) => `| ${name} | ${when} |`),
   ].join('\n')
 }
 
@@ -279,7 +313,7 @@ function familySection(expr, tools) {
     case 'todoHookNote': return 'YOUR TODO CREATION WOULD BE TRACKED BY HOOK([SYSTEM REMINDER - TODO CONTINUATION])'
     case 'keyTriggers': return keyTriggersMarkdown()
     case 'toolSelection': return liveToolTableMarkdown(tools)
-    case 'delegationTable': return delegationTableMarkdown()
+    case 'delegationTable': return delegationTableMarkdown(tools)
     case 'exploreSection':
       return 'Use `explore` for internal codebase search: fire 1-3 in parallel for multi-angle questions, and specify quick/medium/very thorough.'
     case 'librarianSection':
@@ -317,7 +351,7 @@ function renderFamilyPrompt(template, tools) {
     .replaceAll('{{ personality }}', '')
     .replaceAll('{{ modelIdentity }}', 'GPT-5.5 / GPT-5.6')
     .replaceAll('{{ keyTriggers }}', keyTriggersMarkdown())
-    .replaceAll('{{ delegationTable }}', delegationTableMarkdown())
+    .replaceAll('{{ delegationTable }}', delegationTableMarkdown(tools))
     .replaceAll('{{ categorySkillsGuide }}', skillsGuideMarkdown())
     .replaceAll('{{ nonClaudePlannerSection }}', plannerSectionMarkdown())
     .replaceAll('{{ taskSystemGuide }}', taskSystemGuideMarkdown())
@@ -421,40 +455,62 @@ function specialistVariantFile(role, model) {
 
 /** Simplified dsh-tool-facing sections substituted into the atlas variant files. */
 function renderAtlasVariant(template, tools) {
-  const categorySection = [
-    '##### Option A: Use `task(category=...)` / `call_omo_agent(...)`',
-    'Dispatch implementation or QA units with `task(category="...", prompt=..., run_in_background=false)`. Known categories: visual-engineering, deep, ultrabrain, quick, writing, git.',
-  ].join('\n')
-  const agentSection = [
-    '##### Option B: Use a specialist directly',
-    ...DELEGATION_TABLE.map(([name, when]) => `- **\`${name}\`** - ${when}`),
-  ].join('\n')
-  const decisionMatrix = [
-    '##### Decision Matrix',
-    '- Internal codebase search → `explore` or `task(subagent_type="explore")` (parallel 1-3, `run_in_background=true`).',
-    '- External docs/OSS → `librarian` or `task(subagent_type="librarian")`.',
-    '- Architecture/hard debugging → `oracle` or `task(subagent_type="oracle")`.',
-    '- Plan analysis/review → `metis` / `momus`.',
-    '- Media → `multimodal-looker`.',
-    '- Independent implementation units → `task(category=...)`; many workers → `workflow` / `ralph`.',
-    '- Collect background ids with `background_output(task_id="bg_...")` after a completion notice; follow up with `task(task_id="ses_...")`.',
-    'Never provide both a named specialist and a generic task for the same unit.',
-  ].join('\n')
+  const available = new Set((Array.isArray(tools) ? tools : []).map(tool => tool?.name))
+  const categoryTools = ['task', 'call_omo_agent'].filter(tool => available.has(tool))
+  const categorySection = categoryTools.length === 0
+    ? ''
+    : [
+      `##### Option A: Use ${categoryTools.map(tool => `\`${tool}\``).join(' / ')}`,
+      `Dispatch implementation or QA units with ${categoryTools.map(tool => `\`${tool}\``).join(' or ')}. Known categories: ${KNOWN_CATEGORIES.join(', ')}.`,
+    ].join('\n')
+  const GENERIC_DELEGATION = new Set(['task', 'call_omo_agent', 'workflow', 'ralph'])
+  const agentRows = DELEGATION_TABLE.flatMap(([name, when]) => {
+    const parts = name.split(' / ').filter(part => available.has(part) && !GENERIC_DELEGATION.has(part))
+    return parts.length === 0 ? [] : [[parts.join(' / '), when]]
+  })
+  const agentSection = agentRows.length === 0
+    ? ''
+    : ['##### Option B: Use a specialist directly', ...agentRows.map(([name, when]) => `- **\`${name}\`** - ${when}`)].join('\n')
+  const matrixRows = [
+    { tools: ['explore', 'task'], render: names => `- Internal codebase search → ${names.map(name => name === 'task' ? '`task(subagent_type="explore")`' : '`explore`').join(' or ')} (parallel 1-3, \`run_in_background=true\`).` },
+    { tools: ['librarian', 'task'], render: names => `- External docs/OSS → ${names.map(name => name === 'task' ? '`task(subagent_type="librarian")`' : '`librarian`').join(' or ')}.` },
+    { tools: ['oracle', 'task'], render: names => `- Architecture/hard debugging → ${names.map(name => name === 'task' ? '`task(subagent_type="oracle")`' : '`oracle`').join(' or ')}.` },
+    { tools: ['metis', 'momus'], render: names => `- Plan analysis/review → ${names.map(name => `\`${name}\``).join(' / ')}.` },
+    { tools: ['multimodal-looker'], render: () => '- Media → `multimodal-looker`.' },
+    { tools: ['task', 'workflow', 'ralph'], render: names => `- Independent implementation units → ${names.map(name => name === 'task' ? '`task(category=...)`' : `\`${name}\``).join('; ')}.` },
+    { tools: ['background_output'], render: () => `- Collect background ids with \`background_output(task_id="bg_...")\` after a completion notice${available.has('task') ? '; follow up with `task(task_id="ses_...")`' : ''}.` },
+  ]
+  const matrixLines = matrixRows.map(row => {
+    const names = row.tools.filter(tool => available.has(tool))
+    return names.length === 0 ? '' : row.render(names)
+  }).filter(line => line !== '')
+  const decisionMatrix = matrixLines.length === 0
+    ? ''
+    : ['##### Decision Matrix', ...matrixLines, 'Never provide both a named specialist and a generic task for the same unit.'].join('\n')
   const skillsSection = skillsGuideMarkdown()
-  void tools
-  return template
+  let rendered = template
     .replaceAll('{CATEGORY_SECTION}', categorySection)
     .replaceAll('{AGENT_SECTION}', agentSection)
     .replaceAll('{DECISION_MATRIX}', decisionMatrix)
     .replaceAll('{SKILLS_SECTION}', skillsSection)
-    .replaceAll('{{CATEGORY_SKILLS_DELEGATION_GUIDE}}', skillsSection)
+  for (const tool of ['background_output', 'background_cancel']) {
+    if (!available.has(tool)) rendered = rendered.split('\n').filter(line => !line.includes(tool)).join('\n')
+  }
+  return rendered
 }
 
 /** Resolve one role's prompt body for the model this step routes to. */
-function rolePromptFor(role, model, tools) {
+function rolePromptFor(role, model, tools, delegated) {
+  if (delegated && (role === 'atlas' || role === 'sisyphus' || role === 'hephaestus' || role === 'sisyphus-junior')) {
+    // Delegated primary roles have DENY_PRIMARY and cannot orchestrate. Their
+    // catalog shape is irrelevant; the worker prompt is the role contract.
+    return `${rolePrompt('sisyphus-junior')}\n\n## Tool selection (live)\n\n${liveToolTableMarkdown(tools)}`
+  }
   const hephaestus = hephaestusVariantFile(model)
   if (role === 'hephaestus' && hephaestus !== undefined) {
-    const key = `variant:${hephaestus}`
+    // The hephaestus variants embed the live tool table, which differs between
+    // a primary and a delegated child (send_message) and between restrictions.
+    const key = `variant:${hephaestus}:${tools.map(tool => `${tool.name}\u0000${tool.description ?? ''}`).join('\u0001')}`
     const cached = rolePromptCache.get(key)
     if (cached !== undefined) return cached
     const template = promptFile(VARIANT_PROMPT_DIR, hephaestus)
@@ -466,7 +522,7 @@ function rolePromptFor(role, model, tools) {
   }
   if (role === 'atlas') {
     const file = atlasVariantFile(model)
-    const key = `variant:${file}`
+    const key = `variant:${file}:${tools.map(tool => tool.name).join(',')}`
     const cached = rolePromptCache.get(key)
     if (cached !== undefined) return cached
     const template = promptFile(VARIANT_PROMPT_DIR, file)
@@ -532,10 +588,10 @@ const DELEGATION_TABLE = [
   ['metis', '规划前意图/歧义分析'],
   ['momus', '计划可执行性与引用有效性评审'],
   ['multimodal-looker', 'PDF/图片/图表等媒体解读'],
-  ['hephaestus', '端到端复杂实现的深度 worker'],
-  ['atlas', '按计划自动执行并验证全部任务'],
+  ['hephaestus', 'Delegated hephaestus runs as a single-task worker with no nested delegation'],
+  ['atlas', 'Delegated atlas runs as a single-task worker with no nested delegation'],
   ['sisyphus-junior', '单一、边界清晰的轻量实现任务'],
-  ['sisyphus', '完整的 Sisyphus 编排子树（递归委派已由 toolFilter 关闭）'],
+  ['sisyphus', 'Delegated sisyphus runs as a single-task worker with no nested delegation'],
   ['athena / athena-junior / council-member', '委员会多视角评审与裁决'],
 ]
 
@@ -589,7 +645,7 @@ function dynamicSisyphusSections(tools, model) {
     .filter(tool => typeof tool?.name === 'string')
     .map(tool => `| ${tool.name} | ${toolCost(tool.name)} | ${clipped(tool.description)} |`)
     .sort()
-  const delegationRows = DELEGATION_TABLE.map(([name, when]) => `| ${name} | ${when} |`)
+  const delegationTable = delegationTableMarkdown(tools)
   const family = modelFamilyNote(model)
   return [
     '## Dynamic routing (generated every step)',
@@ -598,11 +654,7 @@ function dynamicSisyphusSections(tools, model) {
     '### Key triggers',
     ...KEY_TRIGGERS.map(line => `- ${line}`),
     '',
-    '### Delegation table',
-    '| agent | use when |',
-    '|---|---|',
-    ...delegationRows,
-    '',
+    ...(delegationTable === '' ? [] : ['### Delegation table', delegationTable, '']),
     '### Tool selection',
     '| tool | cost | purpose |',
     '|---|---|---|',
@@ -631,17 +683,36 @@ function opencodeUsesPatch(model) {
     && !model.includes('gpt-4')
 }
 
-function opencodeTools(tools, model) {
+function opencodeTools(tools, model, restriction, allowSendMessage = false) {
+  if (!Array.isArray(tools)) return tools
   const usePatch = opencodeUsesPatch(model)
-  return applyOmoLspCatalog(applyOmoDelegationCatalog(tools)).filter(tool => {
+  return applyOmoLspCatalog(applyOmoDelegationCatalog(tools, { allowSendMessage })).filter(tool => {
+    // Role restrictions apply to every model family, including the write
+    // tools. Otherwise a read-only specialist on a GPT route could actually
+    // execute apply_patch while the non-GPT view only looked inconsistent.
+    if (!toolAllowed(tool.name, restriction, allowSendMessage)) return false
     if (tool.name === 'apply_patch') return usePatch
     if (tool.name === 'edit' || tool.name === 'write') return !usePatch
     return true
   })
 }
 
+/** Whether one tool name survives a delegated child's inherited restriction. */
+function toolAllowed(name, restriction, allowSendMessage = false) {
+  // Children must be able to return their result even when the role's allow
+  // list is narrow (multimodal-looker keeps only read/read_image).
+  if (allowSendMessage && name === 'send_message') return true
+  if (restriction === undefined) return true
+  if (Array.isArray(restriction.allow)) return restriction.allow.includes(name)
+  if (Array.isArray(restriction.deny)) return !restriction.deny.includes(name)
+  return true
+}
+
 /** Execution-side counterpart of the prompt-side gate (model-visible tools only). */
-function gateToolCall(name, model) {
+function gateToolCall(name, model, restriction, allowSendMessage = false) {
+  if (!toolAllowed(name, restriction, allowSendMessage)) {
+    return `opencode-omo: "${name}" is not available to this delegated role`
+  }
   const usePatch = opencodeUsesPatch(model)
   if (name === 'apply_patch' && !usePatch) {
     return 'opencode-omo: apply_patch is not exposed for this model family (edit/write are the file tools)'
@@ -652,7 +723,7 @@ function gateToolCall(name, model) {
   return undefined
 }
 
-export { atlasVariantFile, familyFileFor, gateToolCall, hephaestusVariantFile, opencodeUsesPatch, specialistVariantFile }
+export { atlasVariantFile, familyFileFor, gateToolCall, hephaestusVariantFile, opencodeTools, opencodeUsesPatch, specialistVariantFile }
 
 // Mirrors opencode's ctx.project.vcs === "git" check: walk up from the session
 // cwd looking for a .git entry (handles worktrees/submodules whose .git is a
@@ -708,15 +779,15 @@ function messageText(message) {
 function currentPosition(session) {
   let turn = 0
   let lastStep = 0
-  for (let index = session.events.length - 1; index >= 0; index -= 1) {
-    const event = session.events[index]
+  for (let index = session.snapshotEvents().length - 1; index >= 0; index -= 1) {
+    const event = session.snapshotEvents()[index]
     if (event?.type === 'turn/start') {
       turn = event.data.turn ?? 0
       break
     }
   }
-  for (let index = session.events.length - 1; index >= 0; index -= 1) {
-    const event = session.events[index]
+  for (let index = session.snapshotEvents().length - 1; index >= 0; index -= 1) {
+    const event = session.snapshotEvents()[index]
     if (event?.type === 'step/start' && event.data.turn === turn) {
       lastStep = event.data.step ?? 0
       break
@@ -735,28 +806,33 @@ function nextPosition(session) {
 function currentRouteModel(state, session, agent) {
   const position = currentPosition(session)
   const key = `${position.turn}:${position.step}`
-  return state.resolvedRoutes.get(key)?.model ?? agent.options?.model
+  return state.assembledRoutes.get(key)?.model ?? agent.options?.model
 }
 
 /** Render the omo + opencode whole system prompt for one concrete route. */
 function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
   const session = agent.session
-  const role = omoRoles?.roleFor?.(session.id) ?? 'sisyphus'
-  const tools = schemasFor(ctx, agent)
+  const role = childPromptRoles.get(session.id) ?? omoRoles?.roleFor?.(session.id) ?? 'sisyphus'
+  const restriction = restrictionFor(agent)
+  // The tool table is model-facing prose the model uses to choose calls; it
+  // must match the request catalog exactly. opencodeTools applies the same
+  // hidden-name, model-family, and role-restriction filters as assembly.
+  const tools = opencodeTools(schemasFor(ctx, agent), model, restriction, isDelegatedSession(agent))
   // The prompt family must follow the model this step actually routes to, not
   // the session's previous route (omo re-bakes the prompt for the live model).
-  const roleSystem = rolePromptFor(role, model, tools)
-  const family = role === 'sisyphus' ? familyPromptFor(model) : undefined
+  const delegated = isDelegatedSession(agent)
+  const roleSystem = rolePromptFor(role, model, tools, delegated)
+  const family = role === 'sisyphus' && !delegated ? familyPromptFor(model) : undefined
   const dynamic = roleSystem === undefined && family === undefined
     ? dynamicSisyphusSections(tools, model)
     : ''
   const baseBody = family !== undefined
     ? sisyphusIdentityMarkdown() + '\n\n' + renderFamilyPrompt(family, tools)
     : roleSystem ?? personaText()
-  const buildSwitch = buildSwitchFor(session)
-  const plan = activePlanPrompt(session)
-  // maxSteps + MAX_STEPS_PROMPT always ride the system prompt at the ceiling
-  // on stock 0.1.2 (see maxStepsSectionFor); no dsh-side patch path remains.
+  const buildSwitch = buildSwitchFor(ctx, session)
+  const plan = activePlanPrompt(ctx, session)
+  // maxSteps + MAX_STEPS_PROMPT ride the request-only assistant tail when the
+  // installed loop advertises the patch; otherwise they stay a system section.
   const maxStepsSection = maxStepsSectionFor(omoRoles, session)
   const body = [
     ...(maxStepsSection === undefined ? [] : [maxStepsSection]),
@@ -795,11 +871,32 @@ function schemasFor(ctx, agent) {
   }
 }
 
+/** The exact initiating Agent for this prompt assembly / agent-scoped listener. */
+function currentAgent(ctx) {
+  try {
+    return ctx.get('agents')?.currentInitiator()
+  } catch {
+    return undefined
+  }
+}
+
+/** Tool restriction pinned to a delegated child, if any. */
+function restrictionFor(agent) {
+  return childRestrictions.get(agent.session.id)
+}
+
+/** Whether a child session has already run a turn (i.e. this is a cold resume). */
+function sessionHasHistory(session) {
+  const events = session?.snapshotEvents?.() ?? []
+  return events.some(event => event.type === 'turn/start' || event.type === 'assistant/message')
+}
+
 /** State per live agent: fallback chain position, ultrawork turn, and the prompt/request-consistent route per turn:step. */
 function newState() {
   return {
     fallbackAttempts: new Map(),
     resolvedRoutes: new Map(),
+    assembledRoutes: new Map(),
     lastRouteTurn: 0,
     ultraworkTurn: 0,
   }
@@ -849,15 +946,16 @@ function primaryModelFor(omoRoles, session) {
 }
 
 function roleRoute(omoRoles, state, session, turn, step) {
-  if (omoRoles === undefined) return undefined
   if (turn !== state.lastRouteTurn) {
     // A fresh turn never inherits an older step's fallback position, an
     // older step's resolved route, or an older turn's ultrawork override.
     state.fallbackAttempts.clear()
     state.resolvedRoutes.clear()
+    state.assembledRoutes.clear()
     if (state.ultraworkTurn !== turn) state.ultraworkTurn = 0
     state.lastRouteTurn = turn
   }
+  if (omoRoles === undefined) return undefined
   const ultrawork = ultraworkRouteFor(omoRoles, state, session, turn)
   if (ultrawork?.model !== undefined) return ultrawork.model
   const attempt = state.fallbackAttempts.get(`${turn}:${step}`)
@@ -886,11 +984,17 @@ function advanceFallback(omoRoles, state, session, turn, step) {
   const key = `${turn}:${step}`
   const attempt = state.fallbackAttempts.get(key)
   const nextIndex = attempt === undefined ? 0 : attempt + 1
-  if (fallbackModelsFor(omoRoles, session)[nextIndex] === undefined) {
+  const fallback = fallbackModelsFor(omoRoles, session)[nextIndex]
+  if (fallback === undefined) {
     state.fallbackAttempts.delete(key)
     return false
   }
   state.fallbackAttempts.set(key, nextIndex)
+  // The retry reuses the assembly computed for the primary route; update the
+  // request plan so the next attempt actually routes to the fallback instead
+  // of re-sending the primary. The prompt/tools remain the assembled primary
+  // surface until the next step (the loop does not re-assemble a retry).
+  state.resolvedRoutes.set(key, { provider: fallback.provider, model: fallback.model, target: fallback })
   return true
 }
 
@@ -935,16 +1039,24 @@ function fallbackRetryable(failure) {
 export { fallbackRetryable }
 
 /**
- * Stock 0.1.2 maxSteps path: render opencode's MAX_STEPS_PROMPT as a
- * system-prompt section for the step that reaches the ceiling — the same
- * text and trigger as opencode, differing only in role (system prefix
- * instead of a trailing assistant continuation). The omo prompt re-renders
- * every step, so no dsh seam is needed.
+ * Stock-host maxSteps path: render opencode's MAX_STEPS_PROMPT as a
+ * system-prompt section for the step that reaches the ceiling — the same text
+ * and trigger as opencode, differing only in role. A host carrying
+ * `patches/0001-agent-pre-step-assistant-prefill.patch` advertises
+ * `supportsAssistantPrefill` and uses the request-only assistant tail instead.
  */
 function maxStepsSectionFor(omoRoles, session) {
+  if (assistantPrefillSupported) return undefined
   const maxSteps = maxStepsFor(omoRoles, session)
   if (!Number.isFinite(maxSteps)) return undefined
   return nextPosition(session).step >= maxSteps ? MAX_STEPS_PROMPT : undefined
+}
+
+/** Whether this proposed step is the first at/over the role's step ceiling. */
+function maxStepsReached(omoRoles, session) {
+  const maxSteps = maxStepsFor(omoRoles, session)
+  if (!Number.isFinite(maxSteps)) return false
+  return nextPosition(session).step >= maxSteps
 }
 
 export { maxStepsSectionFor }
@@ -959,6 +1071,8 @@ export function apply(ctx) {
     // default sisyphus prompt and the normal session model.
     omoRoles = undefined
   }
+
+  assistantPrefillSupported = ctx.get('agentLoop')?.supportsAssistantPrefill === true
 
   const stateFor = (agent) => {
     let state = states.get(agent.session.id)
@@ -980,14 +1094,15 @@ export function apply(ctx) {
     name: PERSONA_SECTION,
     order: PERSONA_ORDER,
     complete: true,
-    text: (context) => {
-      if (context.agent === undefined) return personaText()
+    text: () => {
+      if (currentAgent(ctx) === undefined) return personaText()
       return '{{opencode_omo_prompt}}'
     },
   }), 'opencode-omo-loop: complete persona section')
-  ctx.effect(() => ctx.systemPrompt.variable('opencode_omo_prompt', (context) => {
-    if (context.agent === undefined) return personaText()
-    return systemPromptFor(ctx, omoRoles, stateFor(context.agent), context.agent)
+  ctx.effect(() => ctx.systemPrompt.variable('opencode_omo_prompt', () => {
+    const agent = currentAgent(ctx)
+    if (agent === undefined) return personaText()
+    return systemPromptFor(ctx, omoRoles, stateFor(agent), agent)
   }), 'opencode-omo-loop: complete persona variable')
   ctx.systemPrompt.suppressRuntimeContext()
 
@@ -997,9 +1112,9 @@ export function apply(ctx) {
   // before the preset mounts): `next()` then returns the variables carrying
   // the session's live provider/model, and the route stored here is the same
   // one `agent/request` enforces on the actual LLM call.
-  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+  ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
     const transformed = await next()
-    const agent = context.agent
+    const agent = currentAgent(ctx)
     if (agent === undefined) return transformed
     const state = stateFor(agent)
     const position = nextPosition(agent.session)
@@ -1008,13 +1123,29 @@ export function apply(ctx) {
       transformed.variables, agent,
     )
     state.resolvedRoutes.set(`${position.turn}:${position.step}`, route)
+    state.assembledRoutes.set(`${position.turn}:${position.step}`, route)
     transformed.variables.provider = route.provider
     transformed.variables.model = route.model
     transformed.variables.opencode_omo_prompt = renderOmoPrompt(
       ctx, omoRoles, state, agent, route.provider, route.model,
     )
-    return { ...transformed, tools: opencodeTools(transformed.tools, route.model) }
+    return {
+      ...transformed,
+      tools: opencodeTools(
+        transformed.tools, route.model, restrictionFor(agent), isDelegatedSession(agent),
+      ),
+    }
   }, { prepend: true })
+
+  // Request-only assistant tail for opencode's MAX_STEPS_PROMPT. The patched
+  // loop logs it on request/header and appends it to exactly that request;
+  // unpatched hosts keep the system-section fallback rendered above.
+  ctx.on('agent/pre-step', async ({ agent }, next) => {
+    const decision = await next()
+    if (!assistantPrefillSupported || decision.kind !== 'enter') return decision
+    if (!maxStepsReached(omoRoles, agent.session)) return decision
+    return { ...decision, assistantPrefill: MAX_STEPS_PROMPT }
+  })
 
   // Execution-side mirror of the model-visible gate: a hallucinated call to a
   // tool this model family does not see must not dispatch through the original
@@ -1023,7 +1154,7 @@ export function apply(ctx) {
     if (exec.agent === undefined) return next()
     const reason = gateToolCall(exec.name, currentRouteModel(
       stateFor(exec.agent), exec.agent.session, exec.agent,
-    ))
+    ), restrictionFor(exec.agent), isDelegatedSession(exec))
     if (reason !== undefined) return { kind: 'deny', reason }
     return next()
   })
@@ -1100,6 +1231,8 @@ export function apply(ctx) {
 
   ctx.on('agent/disposed', ({ agent }) => {
     states.delete(agent.session.id)
+    childRestrictions.delete(agent.session.id)
+    childPromptRoles.delete(agent.session.id)
   })
 
   // Named specialist tools and task() spawn children without a static
@@ -1109,12 +1242,33 @@ export function apply(ctx) {
   ctx.on('tools/execute', async (exec, next) => {
     const role = roleForDelegationCall(exec.name, exec.arguments)
     if (role === undefined) return next()
-    return pendingChildRole.run(role, () => next())
+    const restriction = toolRestrictionForDelegation(exec.name, exec.arguments)
+    return pendingChild.run({ role, restriction }, () => next())
   })
-  ctx.on('agent/created', ({ agent }) => {
+  ctx.on('agent/created', ({ agent, source }) => {
     if (agent?.session?.header?.origin !== 'subagent') return
-    const role = pendingChildRole.getStore()
-    if (role === undefined || typeof omoRoles?.pinRole !== 'function') return
-    omoRoles.pinRole(agent.session.id, role)
+    const pending = pendingChild.getStore()
+    if (pending === undefined) {
+      // A task_id follow-up cold-resumes the child later; the spawn-time
+      // pending context is gone. Restore the role filter from the pinned role.
+      // A resumed child with a missing pin fails closed to the read-only policy;
+      // a fresh unpinned workflow/ralph worker is a writer.
+      const pinned = omoRoles?.hasRolePin?.(agent.session.id) === true
+      // A fresh unpinned child comes from workflow/ralph-style spawning and is a
+      // writer; a cold-resumed child with a lost pin is treated read-only.
+      const resumed = source === undefined ? sessionHasHistory(agent.session) : source !== 'startup'
+      const inferred = restrictionForRole(
+        pinned
+          ? omoRoles?.roleFor?.(agent.session.id)
+          : resumed ? undefined : 'sisyphus',
+      )
+      childRestrictions.set(agent.session.id, inferred)
+      if (!pinned && resumed) childPromptRoles.set(agent.session.id, 'oracle')
+      else childPromptRoles.delete(agent.session.id)
+      return
+    }
+    if (typeof omoRoles?.pinRole === 'function') omoRoles.pinRole(agent.session.id, pending.role)
+    childPromptRoles.set(agent.session.id, pending.role)
+    if (pending.restriction !== undefined) childRestrictions.set(agent.session.id, pending.restriction)
   })
 }

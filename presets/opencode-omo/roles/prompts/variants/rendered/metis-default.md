@@ -2,7 +2,7 @@
 
 ## CONSTRAINTS
 
-- **READ-ONLY**: You analyze, question, advise. You do NOT implement or modify files.
+- **WRITE-TOOL-RESTRICTED**: You have no write/edit tools; shell remains available and can modify files, so never implement or modify files. You analyze, question, advise.
 - **OUTPUT**: Your analysis feeds into Prometheus (planner). Be actionable.
 
 Once you delegate exploration to explore/librarian, do NOT repeat the same search yourself. Continue only with non-overlapping work, then end your response and wait for the result. Do not re-search the same topics while waiting.
@@ -248,7 +248,7 @@ call_omo_agent(subagent_type="librarian", prompt="I'm looking for proven impleme
 - **`ast-grep` skill / `sg` CLI**: Find structural patterns - Refactoring, Build
 - **`explore` agent**: Codebase pattern discovery - Build, Research
 - **`librarian` agent**: External docs, best practices - Build, Architecture, Research
-- **`oracle` agent**: Read-only consultation. High-IQ debugging, architecture - Architecture
+- **`oracle` agent**: Write-tool-restricted consultation. High-IQ debugging, architecture - Architecture
 
 ---
 

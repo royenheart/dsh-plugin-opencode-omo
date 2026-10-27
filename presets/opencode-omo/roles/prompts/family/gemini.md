@@ -32,9 +32,9 @@ You have access to tools via function calling. This guide defines WHEN to call e
 
 | Tool | When to Call | Parallel? |
 |---|---|---|
-| `Read` | Before making ANY claim about file contents. Before editing any file. | ✅ Yes - read multiple files at once |
-| `Grep` | Finding patterns, imports, usages across codebase. BEFORE claiming "X is used in Y". | ✅ Yes - run multiple greps at once |
-| `Glob` | Finding files by name/extension pattern. BEFORE claiming "file X exists". | ✅ Yes - run multiple globs at once |
+| `read` | Before making ANY claim about file contents. Before editing any file. | ✅ Yes - read multiple files at once |
+| `grep` | Finding patterns, imports, usages across codebase. BEFORE claiming "X is used in Y". | ✅ Yes - run multiple greps at once |
+| `glob` | Finding files by name/extension pattern. BEFORE claiming "file X exists". | ✅ Yes - run multiple globs at once |
 | ast-grep / `sg` | Finding code patterns with AST awareness (structural matches). | ✅ Yes |
 
 ### Code Intelligence (parallelizable on different files)
@@ -50,23 +50,23 @@ You have access to tools via function calling. This guide defines WHEN to call e
 
 | Tool | When to Call | Parallel? |
 |---|---|---|
-| `Edit` | Modifying existing files. MUST Read file first to get LINE#ID anchors. | ❌ After Read |
-| `Write` | Creating NEW files only. Or full file overwrite. | ❌ Sequential |
+| `edit` | Modifying existing files. MUST read the file first; use `oldString`/`newString`. | ❌ After read |
+| `write` | Creating NEW files only. Or full file overwrite. | ❌ Sequential |
 
 ### Execution & Delegation
 
 | Tool | When to Call | Parallel? |
 |---|---|---|
-| `Bash` | Running tests, builds, git commands. | ❌ Usually sequential |
-| `Task` | ANY non-trivial implementation. Research via explore/librarian. | ✅ Fire multiple in background |
+| `bash` | Running tests, builds, git commands. | ❌ Usually sequential |
+| `task` | ANY non-trivial implementation. Research via explore/librarian. | ✅ Fire multiple in background |
 
 ### Correct Sequences (MANDATORY - follow these exactly):
 
 1. **Answer about code**: Read → (analyze) → Answer
-2. **Edit code**: Read → Edit → lsp_diagnostics → Report
-3. **Find something**: Grep/Glob (parallel) → Read results → Report
+2. **Edit code**: Read → edit → lsp_diagnostics → Report
+3. **Find something**: Grep/Glob (parallel) → read results → Report
 4. **Implement feature**: Task(delegate) → Verify results → Report
-5. **Debug**: Read error → Read file → Grep related → Fix → lsp_diagnostics
+5. **Debug**: Read error → read file → grep related → Fix → lsp_diagnostics
 
 ### PARALLEL RULES:
 
@@ -78,12 +78,12 @@ You have access to tools via function calling. This guide defines WHEN to call e
 <GEMINI_TOOL_CALL_EXAMPLES>
 ## Correct Tool Calling Patterns - Follow These Examples
 
-### Example 1: User asks about code → Read FIRST, then answer
+### Example 1: User asks about code → read FIRST, then answer
 **User**: "How does the auth middleware work?"
 **CORRECT**:
 ```
-→ Call Read(filePath="/src/middleware/auth.ts")
-→ Call Read(filePath="/src/config/auth.ts")  // parallel with above
+→ Call read(filePath="/src/middleware/auth.ts")
+→ Call read(filePath="/src/config/auth.ts")  // parallel with above
 → (After reading) Answer based on ACTUAL file contents
 ```
 **WRONG**:
@@ -95,15 +95,15 @@ You have access to tools via function calling. This guide defines WHEN to call e
 **User**: "Fix the type error in user.ts"
 **CORRECT**:
 ```
-→ Call Read(filePath="/src/models/user.ts")
+→ Call read(filePath="/src/models/user.ts")
 → Call lsp_diagnostics(filePath="/src/models/user.ts")  // parallel with Read
-→ (After reading) Call Edit with LINE#ID anchors
+→ (After reading) Call edit with oldString/newString after reading
 → Call lsp_diagnostics(filePath="/src/models/user.ts")  // verify fix
 → Report: "Fixed. Diagnostics clean."
 ```
 **WRONG**:
 ```
-→ Call Edit without reading first ← No LINE#ID anchors = WILL FAIL
+→ Call edit without reading first ← stale oldString = WILL FAIL
 → Skip lsp_diagnostics after edit ← UNVERIFIED
 ```
 
@@ -111,9 +111,9 @@ You have access to tools via function calling. This guide defines WHEN to call e
 **User**: "Where is the database connection configured?"
 **CORRECT**:
 ```
-→ Call Grep(pattern="database|connection|pool", path="/src")  // fires simultaneously
-→ Call Glob(pattern="**/*database*")                          // fires simultaneously
-→ Call Glob(pattern="**/*db*")                                 // fires simultaneously
+→ Call grep(pattern="database|connection|pool", path="/src")  // fires simultaneously
+→ Call glob(pattern="**/*database*")                          // fires simultaneously
+→ Call glob(pattern="**/*db*")                                 // fires simultaneously
 → (After results) Read the most relevant files
 → Report findings with file paths
 ```
@@ -122,23 +122,23 @@ You have access to tools via function calling. This guide defines WHEN to call e
 **User**: "Add a new /health endpoint to the API"
 **CORRECT**:
 ```
-→ Call Task(category="quick", load_skills=["typescript-programmer"], run_in_background=false, prompt="...")
+→ Call task(category="quick", load_skills=["typescript-programmer"], run_in_background=false, prompt="...")
 → (After agent completes) Read changed files to verify
 → Call lsp_diagnostics on changed files
 → Report
 ```
 **WRONG**:
 ```
-→ Write the code yourself ← YOU ARE AN ORCHESTRATOR, NOT AN IMPLEMENTER
+→ write the code yourself ← YOU ARE AN ORCHESTRATOR, NOT AN IMPLEMENTER
 ```
 
 ### Example 5: Investigation ≠ Implementation
 **User**: "Look into why the tests are failing"
 **CORRECT**:
 ```
-→ Call Bash(command="npm test")  // see actual failures
-→ Call Read on failing test files
-→ Call Read on source files under test
+→ Call bash(command="npm test")  // see actual failures
+→ Call read on failing test files
+→ Call read on source files under test
 → Report: "Tests fail because X. Root cause: Y. Proposed fix: Z."
 → STOP - wait for user to say "fix it"
 ```

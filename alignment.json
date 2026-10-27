@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 2,
+  "active": "opencode-1.17.11+omo-5.0.0-beta.31",
+  "combinations": [
+    {
+      "id": "opencode-1.17.11+omo-5.0.0-beta.31",
+      "dsh": {
+        "target": "0.2.1-rc.2",
+        "commit": "687f282e8625c6b8d11ff58211a90524be2e4317"
+      },
+      "opencode": {
+        "version": "1.17.11",
+        "tag": "v1.17.11",
+        "commit": "67aec2212010d67775c35e696d8b8b54902eb338"
+      },
+      "omo": {
+        "promptVersion": "5.0.0-beta.31",
+        "promptTag": "v5.0.0-beta.31",
+        "promptCommit": "62ed7952533a45470ac4008eb199e90be20bd09c",
+        "referenceVersion": "4.19.0",
+        "referenceTag": "v4.19.0",
+        "referenceCommit": "14083b89f1cbf4680be13493a6c4afd67c957e8a",
+        "promptManifest": "presets/opencode-omo/roles/prompts/variants/MANIFEST.md",
+        "referenceOnlyRoles": [
+          {
+            "role": "librarian",
+            "reason": "v5 changes only context7 tool naming and one table header; the harness has no context7, so the v4.19 extraction remains until a harness-adapted v5 extraction lands."
+          },
+          {
+            "role": "explore",
+            "reason": "v5 source is byte-identical to v4.19; the older pin is provenance only."
+          },
+          {
+            "role": "multimodal-looker",
+            "reason": "v5 source is byte-identical to v4.19; the older pin is provenance only."
+          }
+        ]
+      }
+    }
+  ]
+}

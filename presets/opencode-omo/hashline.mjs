@@ -15,6 +15,19 @@ const PRIME32_3 = 0xc2b2ae3d
 const PRIME32_4 = 0x27d4eb2f
 const PRIME32_5 = 0x165667b1
 
+async function resolveToolCwd(ctx, exec) {
+  try {
+    const service = ctx.get?.('workingDirectory')
+    if (service?.ensure !== undefined && exec.agent !== undefined) {
+      const cwd = await service.ensure(exec.agent, exec.signal)
+      if (typeof cwd === 'string' && cwd !== '') return cwd
+    }
+  } catch {
+    // Fall back to the session header.
+  }
+  return exec.agent?.session.header.cwd
+}
+
 function rotl(v, b) { return ((v << b) | (v >>> (32 - b))) >>> 0 }
 function read32(b, o) { return ((b[o] ?? 0) | ((b[o + 1] ?? 0) << 8) | ((b[o + 2] ?? 0) << 16) | ((b[o + 3] ?? 0) << 24)) >>> 0 }
 function round(acc, v) { return Math.imul(rotl((acc + Math.imul(v, PRIME32_2)) >>> 0, 13), PRIME32_1) >>> 0 }
@@ -109,7 +122,7 @@ export function apply(ctx) {
       if (!m) throw new Error('hashline_edit: invalid ref ' + args.ref + ' (expected N#HH)')
       const lineNumber = Number(m[1])
       const expectedHash = m[2]
-      const cwd = exec.agent?.session.header.cwd
+      const cwd = await resolveToolCwd(ctx, exec)
       const target = await ctx.fs.resolve(args.file_path, { cwd, signal: exec.signal })
       const content = await ctx.fs.readText(target, exec.signal)
       const lines = content.split(/\r?\n/)

@@ -1,0 +1,260 @@
+diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
+index adf2e33d..0c7f8bee 100644
+--- a/packages/core/agent-loop/src/agent.ts
++++ b/packages/core/agent-loop/src/agent.ts
+@@ -57,6 +57,8 @@ type PreparedStep =
+     kind: 'enter'
+     messages: UserMessage[]
+     startsRequestSeries?: true
++    /** Request-only assistant tail admitted for this step's request. */
++    assistantPrefill?: string
+     assembly: PromptAssembly
+   }
+ 
+@@ -439,7 +441,10 @@ export class ReactLoopAgent implements Agent {
+         this.session.append('user/message', context, { surfaceOp: 'append' })
+       }
+       firstAttempt = false
+-      const request = this.buildRequest(config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries, signal)
++      const request = this.buildRequest(
++        config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries,
++        decision.assistantPrefill, signal,
++      )
+       const live = new AssistantStreamAttempt(
+         this.session.id,
+         ++this.assistantAttemptCounter,
+@@ -619,6 +624,7 @@ export class ReactLoopAgent implements Agent {
+     tools: GenerateOptions['tools'] & object,
+     position: { turn: number; step: number },
+     startsRequestSeries: boolean,
++    assistantPrefill: string | undefined,
+     signal: AbortSignal,
+   ): GenerateOptions {
+     const { session } = this
+@@ -627,6 +633,7 @@ export class ReactLoopAgent implements Agent {
+       config,
+       ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
+       ...tools.length > 0 ? { tools } : {},
++      ...assistantPrefill === undefined ? {} : { assistantPrefill },
+     })
+     const baseline = this.session.requestHeader()
+     const startsSeries = startsRequestSeries
+@@ -692,9 +699,19 @@ export class ReactLoopAgent implements Agent {
+       this.frozenMessages.add(message)
+     }
+     Object.freeze(boundaryMessages)
++    // Request-only assistant tail: not appended to the session, not part of
++    // later derived history, and not visible to compaction/transcript.
++    const requestMessages = [...boundaryMessages]
++    if (assistantPrefill !== undefined) {
++      requestMessages.push(createAssistantMessage({
++        content: [{ type: 'text', text: assistantPrefill }],
++        source: { provider: config.provider, model: config.model },
++      }))
++    }
++    Object.freeze(requestMessages)
+     const request = markAgentLoopRequest(Object.freeze({
+       ...header.config,
+-      messages: boundaryMessages,
++      messages: requestMessages,
+       toolHistory: session.toolHistory(),
+       ...header.tools !== undefined ? { tools: header.tools } : {},
+       sessionId: this.session.id,
+diff --git a/packages/core/agent-loop/src/index.ts b/packages/core/agent-loop/src/index.ts
+index ca4532af..2fa6cba3 100644
+--- a/packages/core/agent-loop/src/index.ts
++++ b/packages/core/agent-loop/src/index.ts
+@@ -358,6 +358,11 @@ export class AgentLoop extends Service implements AgentFactory {
+ 
+   /** Validated configuration owned by the agent-loop service. */
+   readonly config: Config
++  /**
++   * Capability marker for `PreStepDecision.assistantPrefill` (request-only
++   * assistant tail). Plugins probe this instead of scanning package source.
++   */
++  readonly supportsAssistantPrefill: boolean = true
+   private readonly ownership: FactoryOwnership
+   /** Plain holder prevents Cordis from re-tracing the factory's dependency context through a caller shadow. */
+   private readonly runtime: { ctx: Context }
+diff --git a/packages/core/agent-loop/tests/assistant-prefill.spec.ts b/packages/core/agent-loop/tests/assistant-prefill.spec.ts
+new file mode 100644
+index 00000000..4e7b2990
+--- /dev/null
++++ b/packages/core/agent-loop/tests/assistant-prefill.spec.ts
+@@ -0,0 +1,62 @@
++import { describe, expect, it } from 'vitest'
++import { Context } from '@deepseek-ai/cordis'
++import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
++import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
++import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
++import ToolRuntime from '@deepseek-ai/dsh-tools'
++import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
++import AgentLoop from '@deepseek-ai/dsh-agent-loop'
++import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
++import { MockAdapter, textResponse } from './mock-adapter.ts'
++
++async function harness(adapter: MockAdapter) {
++  const ctx = new Context()
++  await ctx.plugin(LlmRuntime)
++  await ctx.plugin(SessionStore)
++  await ctx.plugin(SessionProjectionRegistry)
++  await ctx.plugin(SystemPrompt)
++  await ctx.plugin(ToolRuntime)
++  await ctx.plugin(AgentRegistry)
++  await ctx.plugin(AgentLoop, { agents: [] })
++  ctx.llm.registerAdapter(['mock'], adapter)
++  return ctx
++}
++
++function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
++  return new Promise((resolve) => {
++    const dispose = ctx.on('agent/status', ({ agent: subject, status }) => {
++      if (subject === agent && status === 'idle') {
++        dispose()
++        resolve()
++      }
++    })
++  })
++}
++
++describe('PreStepDecision.assistantPrefill', () => {
++  it('appends an assistant tail to exactly one request and logs it on request/header', async () => {
++    const adapter = new MockAdapter([textResponse('ok')])
++    const ctx = await harness(adapter)
++    const agent = await ctx.agentLoop.create(SessionId('prefill'), { provider: 'mock', model: 'mock' })
++
++    ctx.on('agent/pre-step', async ({ messages }, next) => {
++      const decision = await next()
++      return decision.kind === 'enter' && messages.length > 0
++        ? { ...decision, assistantPrefill: 'CEILING' }
++        : decision
++    })
++
++    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } }))
++    await waitForIdle(ctx, agent)
++
++    expect(adapter.requests).toHaveLength(1)
++    expect(adapter.requests[0]!.messages.at(-1)).toMatchObject({
++      role: 'assistant',
++      content: [{ type: 'text', text: 'CEILING' }],
++    })
++    expect(agent.session.requestHeader()?.assistantPrefill).toBe('CEILING')
++    expect(agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
++    expect(agent.session.snapshotEvents().some(event =>
++      event.type === 'assistant/message' && JSON.stringify(event.data.message).includes('CEILING'))).toBe(false)
++  })
++})
+diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
+index 0fa89afc..66891e37 100644
+--- a/packages/core/agent/src/runtime-types.ts
++++ b/packages/core/agent/src/runtime-types.ts
+@@ -116,6 +116,12 @@ export type PreStepDecision =
+     messages: UserMessage[]
+     /** Start a distinct model-message series before this step's admitted messages. */
+     startsRequestSeries?: true
++    /**
++     * Request-only assistant tail appended after this step's admitted messages.
++     * The loop logs it on `request/header`, appends it to exactly this request,
++     * and never writes a session `assistant/message`.
++     */
++    assistantPrefill?: string
+   }
+ 
+ /** Action returned by a listener that owns model-request recovery. */
+diff --git a/packages/core/session/src/request-header.ts b/packages/core/session/src/request-header.ts
+index 326165a1..6ffd7f40 100644
+--- a/packages/core/session/src/request-header.ts
++++ b/packages/core/session/src/request-header.ts
+@@ -26,6 +26,9 @@ export function canonicalHeader(header: EpochHeader): EpochHeader {
+       ? { adapterDefaults }
+       : {},
+     ...header.tools !== undefined && header.tools.length > 0 ? { tools: header.tools } : {},
++    ...typeof header.assistantPrefill === 'string' && header.assistantPrefill.length > 0
++      ? { assistantPrefill: header.assistantPrefill }
++      : {},
+   }
+ }
+ 
+@@ -45,6 +48,7 @@ export function headerEquals(a: EpochHeader, b: EpochHeader): boolean {
+     !callConfigEquals(a.config, b.config)
+     || a.adapterDefaults?.reasoningEffort !== b.adapterDefaults?.reasoningEffort
+     || a.adapterDefaults?.maxTokens !== b.adapterDefaults?.maxTokens
++    || a.assistantPrefill !== b.assistantPrefill
+   ) return false
+   const at = a.tools ?? []
+   const bt = b.tools ?? []
+diff --git a/packages/core/session/src/types.ts b/packages/core/session/src/types.ts
+index e0931f22..bd0ade49 100644
+--- a/packages/core/session/src/types.ts
++++ b/packages/core/session/src/types.ts
+@@ -245,6 +245,12 @@ export interface EpochHeader {
+   adapterDefaults?: LlmCallConfigAdapterDefaults
+   /** Assembled tool schemas; absent for a tool-less request. */
+   tools?: ToolSchema[]
++  /**
++   * Request-only assistant tail carried by the next request. It is logged for
++   * reconstruction and pricing but never becomes a session message or surface
++   * node.
++   */
++  assistantPrefill?: string
+   /** Retired request text; system prompts belong to system/message events.
+    * @persistenceReserved
+    */
+diff --git a/packages/llm/token-meter/src/estimate.ts b/packages/llm/token-meter/src/estimate.ts
+index ca54abf6..da5d964b 100644
+--- a/packages/llm/token-meter/src/estimate.ts
++++ b/packages/llm/token-meter/src/estimate.ts
+@@ -100,3 +100,22 @@ export function estimateToolsTokens(header: EpochHeader | undefined): number {
+   if (header?.tools === undefined || header.tools.length === 0) return 0
+   return Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD
+ }
++
++/**
++ * Price the request-only assistant prefill carried by a header.
++ * @param header - canonical envelope, or undefined before any request.
++ * @returns heuristic text and role/block framing tokens; 0 when absent.
++ */
++export function estimateAssistantPrefillTokens(header: EpochHeader | undefined): number {
++  if (typeof header?.assistantPrefill !== 'string' || header.assistantPrefill.length === 0) return 0
++  return Math.ceil(header.assistantPrefill.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD + BLOCK_OVERHEAD
++}
++
++/**
++ * Price every canonical envelope field sent on the wire.
++ * @param header - canonical envelope, or undefined before any request.
++ * @returns heuristic tool-schema plus assistant-prefill tokens.
++ */
++export function estimateHeaderTokens(header: EpochHeader | undefined): number {
++  return estimateToolsTokens(header) + estimateAssistantPrefillTokens(header)
++}
+diff --git a/packages/llm/token-meter/src/index.ts b/packages/llm/token-meter/src/index.ts
+index f721d262..11bd82db 100644
+--- a/packages/llm/token-meter/src/index.ts
++++ b/packages/llm/token-meter/src/index.ts
+@@ -32,7 +32,7 @@ import type {
+ } from './types.ts'
+ import { contextBreakdownProjectionDefinition } from './breakdown-projection.ts'
+ import { contextPressureProjectionDefinition, tokenUsageProjectionDefinition } from './usage-projection.ts'
+-import { estimateContent, estimateMessage, estimateToolsTokens, ROLE_OVERHEAD } from './estimate.ts'
++import { estimateContent, estimateHeaderTokens, estimateMessage, ROLE_OVERHEAD } from './estimate.ts'
+ import { commitSurfaceTokens, planSurfaceTokens } from './surface-fold.ts'
+ import type { MeterSurfaceNode } from './surface-fold.ts'
+ import { priceSurface } from './route-pricing.ts'
+@@ -161,7 +161,7 @@ export class TokenMeter extends Service {
+       // compares like with like.
+       const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing, fileText).surfaceTokens
+         + anchor.assistantTokens
+-      const estimatedAnchorTokens = estimateToolsTokens(header) + anchorSurfaceTokens
++      const estimatedAnchorTokens = estimateHeaderTokens(header) + anchorSurfaceTokens
+       const usage = anchor.usage
+       // Signed heuristic deltas remain conservative only from an anchor
+       // that is at least as large as the matching full heuristic price.
+@@ -175,7 +175,7 @@ export class TokenMeter extends Service {
+     } else {
+       baseline = {
+         kind: 'estimated',
+-        tokens: estimateToolsTokens(header) + surface.surfaceTokens,
++        tokens: estimateHeaderTokens(header) + surface.surfaceTokens,
+       }
+       surfaceDeltaTokens = 0
+     }

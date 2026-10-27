@@ -40,10 +40,10 @@ function mockModules(react, jsxRuntime) {
     '@deepseek-ai/dsh-client-ui-slots': {},
     '@deepseek-ai/dsh-client-web-react': {},
     '@deepseek-ai/dsh-client-ui-primitives': {
-      IconAgentPresetOutline16: () => null,
-      IconChevronDownOutline14: () => null,
-      IconPlusOutline16: () => null,
-      IconCloseOutline16: () => null,
+      IconAgentPresetOutlineRegular: () => null,
+      IconChevronDownOutlineRegular: () => null,
+      IconPlusOutlineRegular: () => null,
+      IconCloseOutlineRegular: () => null,
       Menu: ({ anchor }) => anchor ?? null,
       Modal: () => null,
     },
@@ -51,25 +51,11 @@ function mockModules(react, jsxRuntime) {
   }
 }
 
-function fakeScope(snapshot = { status: 'unavailable' }) {
+function fakeForm(value = { roles: {}, sessions: {} }) {
   return {
-    getSnapshot: () => snapshot,
+    getSnapshot: () => ({ status: 'ready', value, writable: true }),
     subscribe: () => () => {},
-    set: async () => {},
-  }
-}
-
-function fakeRpc() {
-  return {
-    call: async () => ({
-      ok: true,
-      value: {
-        defaultRole: 'sisyphus',
-        roles: [{ id: 'sisyphus', displayName: 'Sisyphus', mode: 'primary', description: 'd', fallbackHint: 'h' }],
-        configs: {},
-        defaults: { sisyphus: null },
-      },
-    }),
+    set: async () => true,
   }
 }
 
@@ -79,22 +65,20 @@ test('client bundle loads under the module loader and exports the plugin face', 
     { jsx: () => null, jsxs: () => null },
   ))
   assert.equal(exportsObj.name, 'opencode-omo-client')
-  assert.equal(JSON.stringify(exportsObj.inject), JSON.stringify(['slots', 'settingsScope', 'connection', 'remote', 'remote.session']))
+  assert.equal(JSON.stringify(exportsObj.inject), JSON.stringify(['slots', 'configForms', 'remote', 'remote.session']))
   assert.equal(typeof exportsObj.apply, 'function')
-  assert.equal(exportsObj.OMO_ROLE_SETTINGS_NAMESPACE, 'opencode-omo-roles')
+  assert.equal(exportsObj.OMO_ROLE_SETTINGS_NAMESPACE, 'opencode-omo')
   assert.equal(exportsObj.ROLES_ENDPOINT, undefined)
   assert.equal(typeof exportsObj.RoleSelect, 'function')
   assert.equal(typeof exportsObj.RoleSettingsSection, 'function')
 })
 
-test('settings section and role chip render with the hybrid settings store', () => {
+test('settings section and role chip render with the official settings form', () => {
   const exportsObj = evaluateBundle(mockModules(React, JsxRuntime))
-  const scope = fakeScope()
-  const rpc = fakeRpc()
+  const form = fakeForm()
 
   const settingsHtml = renderToString(React.createElement(exportsObj.RoleSettingsSection, {
-    scope,
-    rpc,
+    form,
     loadModels: async () => [{ provider: 'openai', model: 'gpt-5.5', label: 'gpt-5.5' }],
   }))
   assert.match(settingsHtml, /为每个 omo 角色配置/)
@@ -102,8 +86,7 @@ test('settings section and role chip render with the hybrid settings store', () 
 
   const roleHtml = renderToString(React.createElement(exportsObj.RoleSelect, {
     sessionId: 'session-1',
-    scope,
-    rpc,
+    form,
     selectModel: async () => true,
     useSessions: selector => selector({ byId: { 'session-1': { agentPreset: 'opencode-omo' } } }),
   }))
