@@ -5,7 +5,7 @@ description: "MUST USE after building/changing any UI or when asked whether a pa
 
 # Visual QA - Dual-Oracle Web and TUI Verification
 
-Verify a rendered UI against intent using objective script evidence plus two parallel read-only oracle passes, then synthesize one good/bad verdict. The script numbers focus the reviewers. They are not the verdict.
+Verify a rendered UI against intent using objective script evidence plus two parallel write-tool-restricted oracle passes, then synthesize one good/bad verdict. The script numbers focus the reviewers. They are not the verdict.
 
 ## Purpose and when to use
 
@@ -99,13 +99,13 @@ Static screenshots miss what moves. For every interactive element and every anim
 
 **Animation is never an excuse to skip or pass a region.** A high `diffRatio` caused by an in-flight animation is **never a valid excuse** to dismiss a defect or wave a region through. Compare **settled state to settled state** for pixel fidelity, and separately verify the motion against the **reference's own motion** (or, with no reference, against the stated intent). "The pixels differ because it animates" is a reason to capture the settled frame and the motion properly — not a reason to pass.
 
-## Step 3 - Dispatch two read-only QA subagents in parallel
+## Step 3 - Dispatch two write-tool-restricted QA subagents in parallel
 
 This independent review is REQUIRED before any "done" claim. Do not self-review inside the main agent and call the UI verified - a self-graded pass is the failure mode this step exists to stop. Dispatch it yourself, every time, without waiting to be told. Give each reviewer the captures for every enumerated page from Step 2, not a sample, and tell it the page count so it can confirm none were skipped.
 
 Dispatch with `task(subagent_type="oracle", ...)` or `oracle(...)`. The code blocks below are written in that form.
 
-Send BOTH calls in a single message so they run concurrently. Each oracle is read-only: it reviews and reports, it cannot modify files. Each returns PASS, REVISE, or FAIL with concrete, located findings. Pass A proves the surface is a real design-system implementation, not a mock-only or faked-image substitute. Pass B directly opens screenshots and inspects source/content for visual and CJK defects.
+Send BOTH calls in a single message so they run concurrently. Each oracle has no write/edit tools, but shell access remains and can modify files; it is not a sandbox. Each returns PASS, REVISE, or FAIL with concrete, located findings. Pass A proves the surface is a real design-system implementation, not a mock-only or faked-image substitute. Pass B directly opens screenshots and inspects source/content for visual and CJK defects.
 
 Paste evidence directly into each prompt: source code, the plain-text TUI captures, the script JSON, and the screenshot paths plus your described observations for web. Never fork parent history into a reviewer - the message carries everything it needs. Require each blocking finding to be tagged `[product]` (the rendered UI is wrong) or `[evidence]` (the capture artifact is defective - wrong signature, partial compositing, stale file); the loop treats the two differently. The two passes differ in depth by charter, not by any model or effort setting, which cannot be pinned per call.
 
@@ -117,7 +117,7 @@ task(subagent_type="oracle",
   load_skills=[],
   description="Visual QA pass A: design-system and functional integrity",
   prompt="""
-REVIEW TYPE: DESIGN-SYSTEM AND FUNCTIONAL INTEGRITY (read-only)
+REVIEW TYPE: DESIGN-SYSTEM AND FUNCTIONAL INTEGRITY (write-tool-restricted)
 TIER INTENT: Treat this as the deeper, stricter pass. Reason exhaustively before concluding. Assume a plausible-looking surface may be faked or mock-only until the source proves otherwise.
 
 INTENT:
@@ -166,8 +166,8 @@ task(subagent_type="oracle",
   load_skills=[],
   description="Visual QA pass B: visual fidelity and CJK precision",
   prompt="""
-REVIEW TYPE: VISUAL FIDELITY AND CJK PRECISION (read-only)
-TIER INTENT: Treat this as the focused visual pass. Directly open the screenshots with the available image-viewing tool (`view_image`, `look_at`, or browser inspection) before judging. Anchor every claim to the script evidence, source code, and captures.
+REVIEW TYPE: VISUAL FIDELITY AND CJK PRECISION (write-tool-restricted)
+TIER INTENT: Treat this as the focused visual pass. Directly open the screenshots with the available `read_image` tool (or browser inspection) before judging. Anchor every claim to the script evidence, source code, and captures.
 
 INTENT:
 {What the user requested and the mock or baseline to match.}
@@ -221,7 +221,7 @@ When both passes return, merge them into a single report. Per dimension, mark go
 
 This is a hard stop rule, not a guideline. The UI is NOT done until ALL of these hold at once on the SAME current build:
 
-- An independent read-only reviewer subagent returned PASS with no BLOCKING findings.
+- An independent write-tool-restricted reviewer subagent returned PASS with no BLOCKING findings.
 - That reviewer judged a FRESH capture of every enumerated page from Step 2 - no stale artifacts, no skipped pages.
 - Every CJK and layout finding is resolved in the rendered output, not merely noted.
 
@@ -253,7 +253,7 @@ If any page fails, you are not done - but treat the two blocker kinds differentl
 
 Run this step IN ADDITION to Steps 1-4 when the original user task has a concrete visual target: "clone this site", "move this Figma design to code", "rebuild this screen", "make it look exactly like X", or "build this Imagen/Stitch/generated mockup and overview". For these tasks the normal dual-oracle is necessary but NOT sufficient. After it returns, run the following TWO additional MANDATORY verifications and LOOP until BOTH pass.
 
-1. Pixel-perfect design-compare subagent (visual oracle). Dispatch a focused, read-only design-compare reviewer (recommend `gpt-5.6-sol` with xhigh reasoning). It must crop/zoom BOTH the reference (target / Figma export / source-site screenshot / generated page snapshot) and the ACTUAL screenshot into matching regions and read them **pixel-by-pixel** - header, nav, each card, spacing, type ramp, color tokens - not at a glance. It must also compare the overview text or annotations against the rendered content and DOM text. Anchor every claim with the bundled tool:
+1. Pixel-perfect design-compare subagent (visual oracle). Dispatch a focused, write-tool-restricted design-compare reviewer (recommend `gpt-5.6-sol` with xhigh reasoning). It must crop/zoom BOTH the reference (target / Figma export / source-site screenshot / generated page snapshot) and the ACTUAL screenshot into matching regions and read them **pixel-by-pixel** - header, nav, each card, spacing, type ramp, color tokens - not at a glance. It must also compare the overview text or annotations against the rendered content and DOM text. Anchor every claim with the bundled tool:
 
 ```
 node "$SKILL_DIR/scripts/visual-qa.mjs" image-diff <reference.png> <actual.png>
@@ -271,7 +271,7 @@ node "$SKILL_DIR/scripts/visual-qa.mjs" image-diff <reference.png> <actual.png>
      load_skills=[],
      description="Clone/design-system fidelity review",
      prompt="""
-   TASK: Act as a clone / design-system fidelity reviewer. Read-only.
+   TASK: Act as a clone / design-system fidelity reviewer. Do not modify files; shell is available but this is a review-only task.
 
    Be skeptical but fair. The executor may have overstated success and may have faked the design — inspect the diff, source code, and reference artifacts before approving.
 

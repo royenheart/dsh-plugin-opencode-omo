@@ -26,14 +26,14 @@ Generate hierarchical AGENTS.md files. Root + complexity-scored subdirectories.
 4. **Review** - Deduplicate, trim, validate
 
 <critical>
-**TodoWrite ALL phases. Mark in_progress → completed in real-time.**
+**todo_write ALL phases. Mark in_progress → completed in real-time.**
 ```
-TodoWrite([
-  { id: "discovery", content: "Fire explore agents + LSP/grep map + read existing", status: "pending", priority: "high" },
-  { id: "scoring", content: "Score directories, determine locations", status: "pending", priority: "high" },
-  { id: "generate", content: "Generate AGENTS.md files (root + subdirs)", status: "pending", priority: "high" },
-  { id: "review", content: "Deduplicate, validate, trim", status: "pending", priority: "medium" }
-])
+todo_write({ "todos": [
+  { "content": "Discovery: Fire explore agents + LSP/grep map + read existing", "status": "pending" },
+  { "content": "Scoring: Score directories, determine locations", "status": "pending" },
+  { "content": "Generate: AGENTS.md files (root + subdirs)", "status": "pending" },
+  { "content": "Review: Deduplicate, validate, trim", "status": "pending" },
+] })
 ```
 </critical>
 
@@ -41,7 +41,7 @@ TodoWrite([
 
 ## Phase 1: Discovery + Analysis (Concurrent)
 
-**Mark "discovery" as in_progress.**
+**Mark the discovery todo as in_progress.**
 
 ### Fire Background Explore Agents IMMEDIATELY
 
@@ -133,13 +133,13 @@ This harness has no `codegraph_*`. Do not wait for `codegraph_status`.
 for each background task ID (`bg_...`): background_output(task_id="bg_...")
 ```
 
-**Merge: bash + LSP/grep + existing + explore findings. Mark "discovery" as completed.**
+**Merge: bash + LSP/grep + existing + explore findings. Mark the discovery todo as completed.**
 
 ---
 
 ## Phase 2: Scoring & Location Decision
 
-**Mark "scoring" as in_progress.**
+**Mark the scoring todo as in_progress.**
 
 ### Scoring Matrix
 
@@ -172,13 +172,13 @@ AGENTS_LOCATIONS = [
 ]
 ```
 
-**Mark "scoring" as completed.**
+**Mark the scoring todo as completed.**
 
 ---
 
 ## Phase 3: Generate AGENTS.md
 
-**Mark "generate" as in_progress.**
+**Mark the generate todo as in_progress.**
 
 <critical>
 **File Writing Rule**: If AGENTS.md already exists at the target path → use `Edit` tool. If it does NOT exist → use `Write` tool.
@@ -249,13 +249,13 @@ for loc in AGENTS_LOCATIONS (except root):
   `)
 ```
 
-**Wait for all. Mark "generate" as completed.**
+**Wait for all. Mark the generate todo as completed.**
 
 ---
 
 ## Phase 4: Review & Deduplicate
 
-**Mark "review" as in_progress.**
+**Mark the review todo as in_progress.**
 
 For each generated file:
 - Remove generic advice
@@ -263,7 +263,7 @@ For each generated file:
 - Trim to size limits
 - Verify telegraphic style
 
-**Mark "review" as completed.**
+**Mark the review todo as completed.**
 
 ---
 

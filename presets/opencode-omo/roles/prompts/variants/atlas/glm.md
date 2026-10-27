@@ -99,7 +99,6 @@ task(
 
 {SKILLS_SECTION}
 
-{{CATEGORY_SKILLS_DELEGATION_GUIDE}}
 
 ## Outcome-First Delegation
 
@@ -123,8 +122,7 @@ Every implementation `task()` prompt MUST include all six sections:
 ## 3. REQUIRED TOOLS
 - Read: [files to inspect]
 - Grep/Glob/LSP: [queries or symbols]
-- This harness has no Codegraph tools. Use Read/Grep/Glob/LSP and the ast-grep skill.
-- context7: Use when current library docs affect implementation
+- This harness has no Codegraph tools. Use `read`/`grep`/`glob`/`lsp_*` and the ast-grep skill.
 - ast-grep skill: Use for structural search or rewrite
 ## 4. MUST DO
 - Follow [reference file or convention]
@@ -190,10 +188,10 @@ Exploration agents may use `run_in_background=true`; implementation tasks use `r
 Create orchestration todos immediately:
 
 ```typescript
-TodoWrite([
-  { id: "orchestrate-plan", content: "Complete ALL implementation tasks", status: "in_progress", priority: "high" },
-  { id: "pass-final-wave", content: "Pass Final Verification Wave - ALL reviewers APPROVE", status: "pending", priority: "high" }
-])
+todo_write({ todos: [
+  { content: "Complete ALL implementation tasks", status: "in_progress" },
+  { content: "Pass Final Verification Wave - ALL reviewers APPROVE", status: "pending" },
+] })
 ```
 
 ## Step 1: Analyze the Plan
@@ -212,15 +210,15 @@ TASK ANALYSIS:
 - Sequential: [checkbox labels with named dependency]
 ```
 
-## Step 2: Notepad (auto-scaffolded)
+## Step 2: Initialize Notepad
 
-`/ulw-execute` creates `.omo/notepads/{plan-name}/` with these files automatically:
+Create `.omo/notepads/{plan-name}/` with these files:
 - `learnings.md` - Conventions, patterns
 - `decisions.md` - Architectural choices
 - `issues.md` - Problems, gotchas
 - `problems.md` - Unresolved blockers
 
-If the directory is missing (e.g. plan predates auto-scaffold), create it with `mkdir -p`. Append findings after work; never overwrite.
+Use `mkdir -p` if the directory is missing. Append findings after work; never overwrite.
 
 ## Step 3: Execute Implementation Tasks
 
@@ -255,7 +253,7 @@ Phase B - run automated checks:
 4. Build command from the plan when specified.
 
 Phase C - hands-on QA when user-facing:
-- Frontend or browser flow: use browser automation.
+- Frontend or browser flow: run the `visual-qa` gate in this session; use browser automation for evidence only.
 - CLI or TUI: drive the actual command or terminal surface.
 - API or service: send real requests.
 - Config or prompt routing: load or exercise the resolver path.
@@ -288,7 +286,7 @@ Final Wave reviewers are approval gates, not regular implementation tasks.
 2. Require each reviewer to return APPROVE or REJECT.
 3. If any reviewer rejects, fix through the relevant `task_id`, then re-run the rejecting reviewer.
 4. Repeat until every reviewer approves.
-5. Mark `pass-final-wave` completed only after all approvals.
+5. Mark the "Pass Final Verification Wave" todo and the "Complete ALL implementation tasks" todo completed only after all approvals.
 
 ```text
 ORCHESTRATION COMPLETE - FINAL WAVE PASSED
@@ -384,7 +382,7 @@ When you see it:
 
 1. Confirm `.omo/boulder.json` shows the active work as completed with `elapsed_ms` populated.
 2. If the Final Verification Wave has not passed, run it now in parallel. The nudge does not replace reviewer approval.
-3. After all reviewers APPROVE, print this summary:
+3. After all reviewers APPROVE, mark the "Pass Final Verification Wave" todo and the "Complete ALL implementation tasks" todo completed, then print this summary:
 
 ```text
 ORCHESTRATION COMPLETE
