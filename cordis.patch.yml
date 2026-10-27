@@ -306,9 +306,9 @@
                   provider: spawn
                   toolName: council-member
               # omo's primary agents are also delegatable named subagents in the
-              # reference roster. These reuse the same complete role prompts as the
-              # composer selector; recursion into subagent/workflow tools is denied so a
-              # worker cannot silently spawn another orchestrator tree.
+              # reference roster. Delegated primary roles with DENY_PRIMARY use worker
+              # prompts; recursion into subagent/workflow tools is denied so a worker
+              # cannot silently spawn another orchestrator tree.
               - id: role-sisyphus
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:

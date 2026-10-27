@@ -20,8 +20,10 @@ export interface OmoModelSelection {
 
 /** Per-role model routing configuration (runtime face). */
 export interface OmoRoleConfig {
-  /** Explicit primary model; undefined means "follow the session model". */
+  /** Explicit primary model; undefined means the omo default unless followSession is set. */
   readonly model?: OmoModelSelection | undefined
+  /** True when the stored primary is the explicit follow-session sentinel (`model:null`). */
+  readonly followSession?: boolean | undefined
   /** Ordered fallback models tried when the primary route fails. */
   readonly fallbackModels: readonly OmoModelSelection[]
   /** opencode-style agent step budget; undefined/Infinity means unlimited. */
@@ -38,7 +40,8 @@ export interface OmoUltraworkOverride {
 
 /** Stored settings shape: `model: null` records "follow the session model". */
 export interface StoredOmoRoleConfig {
-  readonly model: OmoModelSelection | null
+  /** null = follow session; omitted = omo default; object = pinned primary. */
+  readonly model?: OmoModelSelection | null
   readonly fallbackModels: readonly OmoModelSelection[]
   readonly maxSteps?: number | undefined
   readonly ultrawork?: OmoUltraworkOverride | undefined
@@ -185,7 +188,7 @@ export function normalizeOmoRole(role: string | undefined | null): string {
   return role !== null && role !== undefined && isOmoRole(role) ? role : OMO_DEFAULT_ROLE
 }
 
-/** Empty role config: follow the session model and carry no fallbacks. */
+/** Empty runtime role config: omo default primary and no fallbacks. */
 export function emptyRoleConfig(): OmoRoleConfig {
   return { fallbackModels: [] }
 }

@@ -45,7 +45,7 @@ export function OmoSettingsSection({ renderSlot }: OmoSettingsSectionProps): Rea
     <div style={STYLE.section}>
       <h2 style={STYLE.heading}>opencode-omo</h2>
       <p style={STYLE.intro}>
-        opencode + omo 对齐设置：为每个 omo 角色配置主模型、fallback 链、步数预算与 ultrawork 覆盖。
+        opencode + omo 对齐设置：为每个 omo 角色配置主模型与 fallback 链。
       </p>
       <div style={STYLE.tabs} role="tablist" aria-label="opencode-omo 设置页">
         <button

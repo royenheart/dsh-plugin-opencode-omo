@@ -3,18 +3,18 @@
  * `settings.section` entry (the dsh settings panel, not per-session chrome).
  *
  * Per role box:
- * - primary model: a single dropdown under a centered "主模型" label; the
- *   first entry is "跟随当前" (follow the session's current model), anything
- *   else pins a fixed model;
+ * - primary model: a single dropdown under a centered "主模型" label with
+ *   three states: "跟随当前" (model:null sentinel), "使用 omo 默认" (no primary
+ *   entry), or a pinned fixed model;
  * - fallback models: NO dropdown. A dsh-style circle "+" button (same geometry
  *   and tokens as the composer attach button) opens a model list BELOW that
  *   role's box. Clicking a model appends one fallback and keeps the list open
  *   for repeated additions; closing/cancelling without a valid pick adds
  *   nothing. Existing fallbacks render as removable chips in a separate list
  *   container UNDER the role box (not inside it).
- * Every accepted change persists immediately through the host role-config
- * endpoint. The model catalog comes from the session-independent `llm.models`
- * RPC.
+ * Every accepted change persists immediately through the official
+ * `configForms.get('opencode-omo')` form. The model catalog comes from
+ * `remote.session.modelCatalog()` (the session-independent catalog).
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
@@ -32,7 +32,7 @@ import { resolveDefaultOmoModels } from '../core/omo-roles.ts'
 /** Injected face delivered by the settings-section outlet. */
 export interface RoleSettingsInjected {
   readonly form: OmoConfigForm
-  /** Session-independent dsh model catalog (llm.models). */
+  /** Session-independent dsh model catalog (remote.session.modelCatalog). */
   readonly loadModels: () => Promise<readonly OmoCatalogModel[]>
 }
 
@@ -42,6 +42,7 @@ export type RoleSettingsProps = Partial<RoleSettingsInjected> & {
 }
 
 const FOLLOW_SESSION = '__follow-session__'
+const OMO_DEFAULT = '__omo-default__'
 
 const STYLE: Record<string, CSSProperties> = {
   root: { display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13, color: 'var(--dsw-alias-label-primary, #333)' },
@@ -263,14 +264,17 @@ export function RoleSettingsSection({
   })), [models])
 
   const modelLabel = (role: OmoRoleView): string => {
-    const selection = state.configs[role.id]?.model
+    if (state.loading) return '加载中…'
+    const config = state.configs[role.id]
+    if (config?.followSession === true) return '跟随当前'
+    const selection = config?.model
     if (selection !== undefined) {
       return models.find(model => model.provider === selection.provider && model.model === selection.model)?.label
         ?? `${selection.provider}/${selection.model}`
     }
     const omoDefault = resolveDefaultOmoModels(role.id, models)[0]
     if (omoDefault !== null && omoDefault !== undefined) return `omo 默认 · ${labelFor(models, omoDefault)}`
-    return '跟随当前'
+    return 'omo 默认'
   }
 
   const save = (role: OmoRoleView, next: OmoRoleConfig): void => {
@@ -285,24 +289,26 @@ export function RoleSettingsSection({
   const chooseModel = (role: OmoRoleView, id: string): void => {
     setOpenMenu(null)
     const current = state.configs[role.id] ?? { fallbackModels: [] }
-    const selection = id === FOLLOW_SESSION ? undefined : parseModelKey(id)
-    if (selection === undefined && id !== FOLLOW_SESSION) return
-    const catalog = selection === undefined
-      ? undefined
-      : models.find(model => model.provider === selection.provider && model.model === selection.model)
-    const next: OmoRoleConfig = {
-      ...(selection === undefined
-        ? {}
-        : {
-          model: {
-            provider: selection.provider,
-            model: selection.model,
-            ...(catalog?.defaultEffort === undefined ? {} : { reasoningEffort: catalog.defaultEffort }),
-          },
-        }),
-      fallbackModels: current.fallbackModels ?? [],
+    if (id === OMO_DEFAULT) {
+      save(role, { model: undefined, fallbackModels: current.fallbackModels ?? [], followSession: false })
+      return
     }
-    save(role, next)
+    if (id === FOLLOW_SESSION) {
+      save(role, { fallbackModels: current.fallbackModels ?? [], followSession: true })
+      return
+    }
+    const selection = parseModelKey(id)
+    if (selection === undefined) return
+    const catalog = models.find(model => model.provider === selection.provider && model.model === selection.model)
+    save(role, {
+      model: {
+        provider: selection.provider,
+        model: selection.model,
+        ...(catalog?.defaultEffort === undefined ? {} : { reasoningEffort: catalog.defaultEffort }),
+      },
+      fallbackModels: current.fallbackModels ?? [],
+      followSession: false,
+    })
   }
 
   const chooseEffort = (role: OmoRoleView, effort: string): void => {
@@ -312,7 +318,7 @@ export function RoleSettingsSection({
     const nextModel: OmoModelSelection = effort === ''
       ? { provider: model.provider, model: model.model }
       : { provider: model.provider, model: model.model, reasoningEffort: effort }
-    save(role, { model: nextModel, fallbackModels: current.fallbackModels ?? [] })
+    save(role, { model: nextModel, fallbackModels: current.fallbackModels ?? [], followSession: false })
   }
 
   const closeFallback = (): void => {
@@ -339,6 +345,7 @@ export function RoleSettingsSection({
     setPanelError(null)
     save(role, {
       ...(current.model === undefined ? {} : { model: current.model }),
+      ...(current.followSession === true ? { followSession: true } : {}),
       fallbackModels: [...existing, {
         provider: model.provider,
         model: model.model,
@@ -352,6 +359,7 @@ export function RoleSettingsSection({
     const key = modelKey(selection)
     save(role, {
       ...(current.model === undefined ? {} : { model: current.model }),
+      ...(current.followSession === true ? { followSession: true } : {}),
       fallbackModels: (current.fallbackModels ?? []).filter(entry => modelKey(entry) !== key),
     })
   }
@@ -403,8 +411,14 @@ export function RoleSettingsSection({
             <div style={STYLE.primaryLabel}>主模型</div>
             <Menu
               open={openMenu === `${role.id}:model`}
-              items={[{ id: FOLLOW_SESSION, label: '跟随当前' }, ...choices]}
-              selectedId={currentModel === undefined ? FOLLOW_SESSION : modelKey(currentModel)}
+              items={[
+                { id: FOLLOW_SESSION, label: '跟随当前' },
+                { id: OMO_DEFAULT, label: '使用 omo 默认' },
+                ...choices,
+              ]}
+              selectedId={current?.followSession === true
+                ? FOLLOW_SESSION
+                : currentModel === undefined ? OMO_DEFAULT : modelKey(currentModel)}
               onSelect={id => { chooseModel(role, id) }}
               onClose={() => { setOpenMenu(null) }}
               compact
@@ -500,7 +514,7 @@ export function RoleSettingsSection({
   return (
     <div ref={rootRef} style={STYLE.root}>
       <div style={STYLE.hint}>
-        为每个 omo 角色配置主模型与 fallback 模型。主模型选择“跟随当前”时使用该会话当前的模型选择；点击 ＋ 在角色框下方选择 fallback，可连续添加多个，点击取消或空白处关闭不会添加。
+        为每个 omo 角色配置主模型与 fallback 模型。主模型可选择“跟随当前”、使用 omo 默认或固定模型；点击 ＋ 在角色框下方选择 fallback，可连续添加多个，点击取消或空白处关闭不会添加。
       </div>
       {(state.error ?? modelError) !== null && <div style={STYLE.error}>{state.error ?? modelError}</div>}
       {roleRows}

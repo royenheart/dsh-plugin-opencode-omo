@@ -21,6 +21,19 @@ class MockSettings extends Service {
   async update(_ns, patch) {
     this.state = { ...this.state, ...structuredClone(patch) }
   }
+  async mutate(_ns, ops) {
+    const next = structuredClone(this.state)
+    for (const op of ops) {
+      if (op.op !== 'set') continue
+      let node = next
+      for (const key of op.path.slice(0, -1)) {
+        if (node[key] === undefined || typeof node[key] !== 'object') node[key] = {}
+        node = node[key]
+      }
+      node[op.path.at(-1)] = structuredClone(op.value)
+    }
+    this.state = next
+  }
 }
 
 class MockLlm extends Service {
@@ -83,6 +96,15 @@ test('explicit follow-session model keeps the session route', async () => {
   await ctx.omoRoles.setRoleConfig('hephaestus', { model: null, fallbackModels: [] })
   assert.equal(ctx.omoRoles.primaryModelFor('hephaestus'), undefined)
   assert.equal(ctx.omoRoles.fallbackModelsFor('hephaestus').length, 0)
+})
+
+test('setRoleConfig can clear a pin back to the omo-default route', async () => {
+  const { ctx } = await boot()
+  await ctx.omoRoles.refreshDefaultFallbacks()
+  await ctx.omoRoles.setRoleConfig('hephaestus', { model: null, fallbackModels: [] })
+  assert.equal(ctx.omoRoles.primaryModelFor('hephaestus'), undefined)
+  await ctx.omoRoles.setRoleConfig('hephaestus', { fallbackModels: [] })
+  assert.deepEqual(ctx.omoRoles.primaryModelFor('hephaestus'), { provider: 'openai', model: 'gpt-5.5' })
 })
 
 test('persists step budget and ultrawork override on a role config', async () => {
