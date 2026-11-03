@@ -7,8 +7,6 @@ export const APP_URL = process.env.DSH_MIGRATE_WEB_URL
 /** Directory offered to the host's workspace picker when no workspace exists yet. */
 export const WORKSPACE_PATH = process.env.GITHUB_WORKSPACE ?? process.cwd()
 
-const MODE_BUTTON = /^(Standard mode|PTC mode|Minimal mode|Creator mode|opencode-omo)$/
-
 /**
  * Register the console + pageerror tripwire. The returned list is asserted in
  * each spec's final `check:` step.
@@ -85,25 +83,6 @@ export async function openHarness(page: Page): Promise<void> {
 }
 
 /**
- * Put the current new session into the `opencode-omo` preset. Idempotent: if
- * the composer already shows the omo role chip it does nothing.
- * @param page - browser page under test.
- */
-export async function openOmoSession(page: Page): Promise<void> {
-  const selected = page.getByRole('button', { name: 'opencode-omo', exact: true })
-  if (await selected.isVisible().catch(() => false)) return
-
-  const modeButton = page.getByRole('button', { name: MODE_BUTTON }).first()
-  await expect(modeButton).toBeVisible()
-  await modeButton.click()
-  const preset = page.getByRole('menuitem', { name: /^opencode-omo\b/ })
-  await expect(preset).toBeVisible()
-  await preset.click()
-  await expect(selected).toBeVisible()
-  await waitForStable(() => page.locator('body').innerText())
-}
-
-/**
  * Open the host settings dialog and select the plugin's `opencode-omo`
  * section. The dialog and its navigation are host UI (reach); the returned
  * dialog is the scope for plugin-rendered assertions.
@@ -170,8 +149,10 @@ export async function removeAllFallbackChips(dialog: Locator): Promise<void> {
   const chips = dialog.getByRole('button', { name: /^移除 / })
   for (let guard = 0; guard < 20 && (await chips.count()) > 0; guard += 1) {
     await waitForStable(async () => String(await chips.count()))
-    const label = await chips.first().getAttribute('aria-label')
-    await chips.first().click()
+    const chip = chips.first()
+    await expect(chip).toBeEnabled()
+    const label = await chip.getAttribute('aria-label')
+    await chip.click()
     if (label !== null) {
       await expect(dialog.getByRole('button', { name: label, exact: true })).toHaveCount(0)
     }

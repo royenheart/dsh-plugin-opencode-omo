@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { Locator } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import {
   addFallbackButton,
   attachTripwire,
@@ -84,6 +84,33 @@ const ROLES = [
   },
 ] as const
 
+const FOLLOW_SESSION = '跟随当前'
+const OMO_DEFAULT = '使用 omo 默认'
+const OMO_DEFAULT_LABEL = /^omo 默认(?: · .+)?$/
+const SETTINGS_HEADING = 'opencode-omo'
+const SETTINGS_INTRO = 'opencode + omo 对齐设置：为每个 omo 角色配置主模型与 fallback 链。'
+
+/** Open a role's primary-model menu and read its entries. */
+async function readModelMenu(page: Page, primary: Locator): Promise<string[]> {
+  await primary.click()
+  const items = page.getByRole('menuitem')
+  await expect(items.first()).toBeVisible()
+  // Wait for the asynchronously loaded catalog, not only the two sentinels.
+  await expect.poll(async () => items.count()).toBeGreaterThan(2)
+  return (await items.allInnerTexts()).map(label => label.trim())
+}
+
+/** Open a role's primary-model menu and choose one entry. */
+async function chooseModel(page: Page, primary: Locator, label: string): Promise<void> {
+  await primary.click()
+  await page.getByRole('menuitem', { name: label, exact: true }).click()
+}
+
+/** The non-sentinel model labels offered by an open primary-model menu. */
+function catalogModels(menu: readonly string[]): string[] {
+  return menu.filter(label => label !== FOLLOW_SESSION && label !== OMO_DEFAULT)
+}
+
 test('role settings page lists the complete omo role catalog', async ({ page }) => {
   const errors = attachTripwire(page)
 
@@ -96,20 +123,21 @@ test('role settings page lists the complete omo role catalog', async ({ page }) 
   })
 
   await test.step('check: the plugin page renders its heading, intro, tab and all 14 role boxes', async () => {
-    await expect(dialog.getByRole('heading', { name: 'opencode-omo', exact: true })).toBeVisible()
-    await expect(
-      dialog.getByText(
-        'opencode + omo 对齐设置：为每个 omo 角色配置主模型、fallback 链、步数预算与 ultrawork 覆盖。',
-        { exact: true },
-      ),
-    ).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: SETTINGS_HEADING, exact: true })).toBeVisible()
+    await expect(dialog.getByText(SETTINGS_INTRO, { exact: true })).toBeVisible()
+    await expect(dialog.getByText(
+      '为每个 omo 角色配置主模型与 fallback 模型。主模型可选择“跟随当前”、使用 omo 默认或固定模型；点击 ＋ 在角色框下方选择 fallback，可连续添加多个，点击取消或空白处关闭不会添加。',
+      { exact: true },
+    )).toBeVisible()
 
+    await expect(dialog.getByRole('tablist', { name: 'opencode-omo 设置页', exact: true })).toBeVisible()
     const tab = dialog.getByRole('tab', { name: '角色设置', exact: true })
     await expect(tab).toBeVisible()
     await expect(tab).toHaveAttribute('aria-selected', 'true')
 
     for (const role of ROLES) {
       const row = roleRow(dialog, role.name)
+      await expect(row.getByText(role.name, { exact: true })).toBeVisible()
       await expect(row.getByText(role.description, { exact: true })).toBeVisible()
       await expect(row.getByText(`omo 默认链：${role.hint}`, { exact: true })).toBeVisible()
       await expect(row.getByText('主模型', { exact: true })).toBeVisible()
@@ -126,7 +154,7 @@ test('role settings page lists the complete omo role catalog', async ({ page }) 
   })
 })
 
-test('primary model selector pins a model, exposes reasoning effort, and follows the session again', async ({ page }) => {
+test('primary model selector offers follow, omo default, and a pinned model with reasoning effort', async ({ page }) => {
   const errors = attachTripwire(page)
   let pinnedModel = ''
   let pinnedEffort = ''
@@ -139,38 +167,54 @@ test('primary model selector pins a model, exposes reasoning effort, and follows
     return openOmoSettings(page)
   })
 
-  await test.step('check: a role primary model can be pinned and its reasoning effort chosen', async () => {
+  await test.step('check: the three primary-model states are offered and a fixed model exposes effort', async () => {
     const row = roleRow(dialog, 'Sisyphus - Ultraworker')
     const primary = primaryModelButton(dialog, 'Sisyphus - Ultraworker')
+    await expect.poll(async () => (await primary.innerText()).trim()).not.toBe('加载中…')
 
     // Start from the documented "follow current" state even after a failed run.
-    if ((await primary.innerText()).trim() !== '跟随当前') {
-      await primary.click()
-      await page.getByRole('menuitem', { name: '跟随当前', exact: true }).click()
+    if ((await primary.innerText()).trim() !== FOLLOW_SESSION) {
+      await chooseModel(page, primary, FOLLOW_SESSION)
     }
-    await expect(primary).toHaveText('跟随当前')
+    await expect(primary).toHaveText(FOLLOW_SESSION)
+    await expect(row.getByRole('combobox')).toHaveCount(0)
 
-    await primary.click()
-    const models = (await page.getByRole('menuitem').allInnerTexts()).map((name) => name.trim())
-    expect(models).toContain('跟随当前')
-    expect(models.length).toBeGreaterThan(1)
-    pinnedModel = models.find((name) => name !== '跟随当前') ?? ''
-    expect(pinnedModel).not.toBe('')
+    await chooseModel(page, primary, OMO_DEFAULT)
+    await expect(primary).toHaveText(OMO_DEFAULT_LABEL)
+    await expect(row.getByRole('combobox')).toHaveCount(0)
 
-    await page.getByRole('menuitem', { name: pinnedModel, exact: true }).click()
-    await expect(primary).toHaveText(pinnedModel)
+    const menu = await readModelMenu(page, primary)
+    expect(menu).toContain(FOLLOW_SESSION)
+    expect(menu).toContain(OMO_DEFAULT)
+    const models = catalogModels(menu)
+    expect(models.length).toBeGreaterThan(0)
 
-    const effort = row.locator('select')
+    await page.getByRole('menuitem', { name: models[0]!, exact: true }).click()
+    await expect(primary).toHaveText(models[0]!)
+
+    // A catalog model may carry adapter reasoning efforts. Find one that does.
+    for (const model of models.slice(1)) {
+      if ((await row.getByRole('combobox').count()) > 0) break
+      await chooseModel(page, primary, model)
+      await expect(primary).toHaveText(model)
+    }
+
+    pinnedModel = await primary.innerText()
+    expect(pinnedModel).not.toBe(FOLLOW_SESSION)
+    expect(pinnedModel).not.toBe(OMO_DEFAULT)
+
+    const effort = row.getByRole('combobox')
     await expect(effort).toBeVisible()
-    const efforts = await effort.locator('option').evaluateAll((options) =>
-      options.map((option) => ({ label: (option.textContent ?? '').trim(), value: option.value })))
-    expect(efforts.map((option) => option.label)).toContain('默认 effort')
-    const nonDefault = efforts.filter((option) => option.value !== '')
+    const options = await effort.locator('option').evaluateAll((elements) =>
+      elements.map(element => ({ label: (element.textContent ?? '').trim(), value: (element as HTMLOptionElement).value })))
+    expect(options.map(option => option.label)).toContain('默认 effort')
+    const nonDefault = options.filter(option => option.value !== '')
     expect(nonDefault.length).toBeGreaterThan(0)
     pinnedEffort = nonDefault[nonDefault.length - 1]!.value
 
     await effort.selectOption(pinnedEffort)
     await expect(effort).toHaveValue(pinnedEffort)
+    await expect(primary).toBeEnabled()
   })
 
   await test.step('reach: close Settings and reopen the opencode-omo section', async () => {
@@ -184,12 +228,12 @@ test('primary model selector pins a model, exposes reasoning effort, and follows
     const primary = primaryModelButton(dialog, 'Sisyphus - Ultraworker')
     await expect(primary).toHaveText(pinnedModel)
 
-    const effort = row.locator('select')
+    const effort = row.getByRole('combobox')
     await expect(effort).toHaveValue(pinnedEffort)
 
-    await primary.click()
-    await page.getByRole('menuitem', { name: '跟随当前', exact: true }).click()
-    await expect(primary).toHaveText('跟随当前')
+    await chooseModel(page, primary, FOLLOW_SESSION)
+    await expect(primary).toHaveText(FOLLOW_SESSION)
+    await expect(primary).toBeEnabled()
     await expect(effort).toHaveCount(0)
   })
 
@@ -217,23 +261,30 @@ test('fallback add panel appends chips, supports repeated additions, and rejects
     await plus.click()
     const panel = fallbackPanel(dialog, 'Sisyphus - Ultraworker')
     await expect(panel).toBeVisible()
-    await expect(panel.getByPlaceholder('搜索模型…')).toBeVisible()
+    await expect(panel.getByText('选择 Sisyphus - Ultraworker 的 fallback 模型', { exact: true })).toBeVisible()
+    await expect(panel.getByRole('textbox', { name: '搜索模型…', exact: true })).toBeVisible()
 
     const offered = (await panel.getByRole('button').allInnerTexts())
-      .map((label) => label.trim())
-      .filter((label) => label !== '取消')
+      .map(label => label.trim())
+      .filter(label => label !== '取消')
     expect(offered.length).toBeGreaterThan(1)
     const [first, second] = offered
 
-    await panel.getByRole('button', { name: first, exact: true }).click()
+    const firstButton = panel.getByRole('button', { name: first!, exact: true })
+    await expect(firstButton).toBeEnabled()
+    await firstButton.click()
     await expect(dialog.getByRole('button', { name: `移除 ${first}`, exact: true })).toBeVisible()
     // The list stays open so more fallbacks can be appended.
     await expect(panel).toBeVisible()
+    await expect(dialog.getByText('Fallback 模型', { exact: true })).toBeVisible()
 
-    await panel.getByRole('button', { name: first, exact: true }).click()
+    await expect(firstButton).toBeEnabled()
+    await firstButton.click()
     await expect(panel.getByText('该模型已在 fallback 列表中', { exact: true })).toBeVisible()
 
-    await panel.getByRole('button', { name: second, exact: true }).click()
+    const secondButton = panel.getByRole('button', { name: second!, exact: true })
+    await expect(secondButton).toBeEnabled()
+    await secondButton.click()
     await expect(dialog.getByRole('button', { name: `移除 ${second}`, exact: true })).toBeVisible()
     await expect(dialog.getByRole('button', { name: /^移除 / })).toHaveCount(2)
 
@@ -262,32 +313,34 @@ test('fallback model search filters the list and reports no matches', async ({ p
   })
 
   await test.step('check: typing in the fallback search filters the offered models', async () => {
+    await removeAllFallbackChips(dialog)
     await addFallbackButton(dialog, 'Sisyphus - Ultraworker').click()
     const panel = fallbackPanel(dialog, 'Sisyphus - Ultraworker')
     await expect(panel).toBeVisible()
-    const search = panel.getByPlaceholder('搜索模型…')
+    const search = panel.getByRole('textbox', { name: '搜索模型…', exact: true })
     await expect(search).toBeVisible()
 
     const offered = (await panel.getByRole('button').allInnerTexts())
-      .map((label) => label.trim())
-      .filter((label) => label !== '取消')
+      .map(label => label.trim())
+      .filter(label => label !== '取消')
     expect(offered.length).toBeGreaterThan(1)
     const [first, second] = offered
     expect(second).not.toBe(first)
 
-    await search.fill(second)
-    await expect(panel.getByRole('button', { name: second, exact: true })).toBeVisible()
-    await expect(panel.getByRole('button', { name: first, exact: true })).toHaveCount(0)
+    await search.fill(second!)
+    await expect(panel.getByRole('button', { name: second!, exact: true })).toBeVisible()
+    await expect(panel.getByRole('button', { name: first!, exact: true })).toHaveCount(0)
 
     await search.fill('model-that-does-not-exist')
     await expect(panel.getByText('没有匹配的模型', { exact: true })).toBeVisible()
 
     await search.fill('')
-    await expect(panel.getByRole('button', { name: first, exact: true })).toBeVisible()
-    await expect(panel.getByRole('button', { name: second, exact: true })).toBeVisible()
+    await expect(panel.getByRole('button', { name: first!, exact: true })).toBeVisible()
+    await expect(panel.getByRole('button', { name: second!, exact: true })).toBeVisible()
 
     await panel.getByRole('button', { name: '取消', exact: true }).click()
     await expect(panel).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: /^移除 / })).toHaveCount(0)
   })
 
   await test.step('check: no console errors or page errors', () => {
@@ -295,53 +348,106 @@ test('fallback model search filters the list and reports no matches', async ({ p
   })
 })
 
-test('fallback panel cancel adds nothing and chips can be removed', async ({ page }) => {
+test('fallback panel cancel, toggle, outside click, and Escape add nothing', async ({ page }) => {
   const errors = attachTripwire(page)
 
   await test.step('reach: open the launch URL and prepare a session workspace', async () => {
     await openHarness(page)
   })
 
-  const dialog = await test.step('reach: open Settings and select the opencode-omo section', async () => {
+  let dialog: Locator = await test.step('reach: open Settings and select the opencode-omo section', async () => {
     return openOmoSettings(page)
   })
 
-  await test.step('check: cancel and the + toggle close the fallback panel without adding a model', async () => {
+  await test.step('check: every dismissal closes the fallback panel without adding a model', async () => {
     await removeAllFallbackChips(dialog)
-    await expect(dialog.getByRole('button', { name: /^移除 / })).toHaveCount(0)
-
     const plus = addFallbackButton(dialog, 'Sisyphus - Ultraworker')
+    const panel = fallbackPanel(dialog, 'Sisyphus - Ultraworker')
+    const chips = dialog.getByRole('button', { name: /^移除 / })
+
     await plus.click()
-    let panel = fallbackPanel(dialog, 'Sisyphus - Ultraworker')
     await expect(panel).toBeVisible()
     await panel.getByRole('button', { name: '取消', exact: true }).click()
     await expect(panel).toHaveCount(0)
-    await expect(dialog.getByRole('button', { name: /^移除 / })).toHaveCount(0)
+    await expect(chips).toHaveCount(0)
 
     await plus.click()
-    panel = fallbackPanel(dialog, 'Sisyphus - Ultraworker')
     await expect(panel).toBeVisible()
     await plus.click()
     await expect(panel).toHaveCount(0)
+    await expect(chips).toHaveCount(0)
+
+    await plus.click()
+    await expect(panel).toBeVisible()
+    await dialog.getByRole('heading', { name: SETTINGS_HEADING, exact: true }).click()
+    await expect(panel).toHaveCount(0)
+    await expect(chips).toHaveCount(0)
+
+    await plus.click()
+    await expect(panel).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(panel).toHaveCount(0)
+    await expect(chips).toHaveCount(0)
+  })
+
+  await test.step('reach: reopen Settings when Escape also dismissed the host dialog', async () => {
+    if ((await dialog.count()) === 0) dialog = await openOmoSettings(page)
+  })
+
+  await test.step('check: the fallback panel is closed and no chip was added', async () => {
+    await expect(fallbackPanel(dialog, 'Sisyphus - Ultraworker')).toHaveCount(0)
     await expect(dialog.getByRole('button', { name: /^移除 / })).toHaveCount(0)
   })
 
-  await test.step('check: a fallback chip can be added and then removed', async () => {
-    const plus = addFallbackButton(dialog, 'Sisyphus - Ultraworker')
-    await plus.click()
+  await test.step('check: no console errors or page errors', () => {
+    expect(errors).toEqual([])
+  })
+})
+
+test('fallback chips persist across reopening and can be removed', async ({ page }) => {
+  const errors = attachTripwire(page)
+
+  await test.step('reach: open the launch URL and prepare a session workspace', async () => {
+    await openHarness(page)
+  })
+
+  let dialog: Locator = await test.step('reach: open Settings and select the opencode-omo section', async () => {
+    return openOmoSettings(page)
+  })
+
+  await test.step('check: a fallback chip is added and kept when the panel closes', async () => {
+    await removeAllFallbackChips(dialog)
+    await addFallbackButton(dialog, 'Sisyphus - Ultraworker').click()
     const panel = fallbackPanel(dialog, 'Sisyphus - Ultraworker')
     await expect(panel).toBeVisible()
     const first = (await panel.getByRole('button').allInnerTexts())
-      .map((label) => label.trim())
-      .filter((label) => label !== '取消')[0]!
+      .map(label => label.trim())
+      .filter(label => label !== '取消')[0]!
     await panel.getByRole('button', { name: first, exact: true }).click()
     const chip = dialog.getByRole('button', { name: `移除 ${first}`, exact: true })
     await expect(chip).toBeVisible()
+    await expect(chip).toBeEnabled()
     await panel.getByRole('button', { name: '取消', exact: true }).click()
     await expect(panel).toHaveCount(0)
+  })
 
-    await chip.click()
-    await expect(chip).toHaveCount(0)
+  await test.step('reach: close Settings and reopen the opencode-omo section', async () => {
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+    dialog = await openOmoSettings(page)
+  })
+
+  await test.step('check: the chip persists, and removing it drops the fallback list', async () => {
+    const chip = dialog.getByRole('button', { name: /^移除 / })
+    await expect(chip).toHaveCount(1)
+    await expect(dialog.getByText('Fallback 模型', { exact: true })).toBeVisible()
+
+    const label = await chip.first().getAttribute('aria-label')
+    await chip.first().click()
+    if (label !== null) {
+      await expect(dialog.getByRole('button', { name: label, exact: true })).toHaveCount(0)
+    }
+    await expect(dialog.getByRole('button', { name: /^移除 / })).toHaveCount(0)
     await expect(dialog.getByText('Fallback 模型', { exact: true })).toHaveCount(0)
   })
 
