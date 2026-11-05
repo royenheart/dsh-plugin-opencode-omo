@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "label": "dsh",
-  "message": "dsh-v0.2.1-rc.2 | dsh-v0.2.2-alpha.3 proposed",
-  "color": "yellow"
+  "message": "dsh-v0.2.1-rc.2 | dsh-v0.2.2-rc.1 failed",
+  "color": "red"
 }
