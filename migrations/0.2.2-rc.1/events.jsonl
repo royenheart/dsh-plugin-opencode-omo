@@ -19,3 +19,4 @@
 {"kind":"event","at":"2026-11-06T06:01:00.803Z","event":{"type":"check.done","result":{"check":"e2e","outcome":"pass","fingerprint":"","detail":"6 test(s) passed"}}}
 {"kind":"event","at":"2026-11-06T06:01:00.825Z","event":{"type":"tree.inspected","changed":true,"files":18}}
 {"kind":"event","at":"2026-11-06T06:01:06.010Z","event":{"type":"proposal.published","proposal":{"branch":"dsh-migrate/proposal","headSha":"acb113a08dd3c7acb0897ffa2ad6a056e77cf81b","issue":{"number":19,"url":"https://github.com/royenheart/dsh-plugin-opencode-omo/issues/19"},"pullRequest":{"number":20,"url":"https://github.com/royenheart/dsh-plugin-opencode-omo/pull/20"}}}}
+{"kind":"event","at":"2026-11-06T06:25:18.470Z","event":{"type":"e2e.published","outcome":"pushed","detail":"acf595baaddbe686a61b31049f4678d0abae7afe","usage":{"inputTokens":121185,"outputTokens":90302,"cacheHitTokens":13972736,"usd":0.22855431599999984}}}
