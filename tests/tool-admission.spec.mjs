@@ -66,11 +66,14 @@ test('step admission keeps opencode hidden names, model gating, and inherited co
     options: { provider: 'mock', model: 'deepseek-v4' },
   }
   const scope = createScope(ctx, agent)
+  const originals = new Map()
   for (const name of TOOL_NAMES) {
+    const definition = dshTool(name)
+    originals.set(name, definition)
     if (name === 'exit_plan_mode') {
-      ctx.tools.register(dshTool(name), { when: ({ agent }) => agent.session.header.plan === true })
+      ctx.tools.register(definition, { when: ({ agent }) => agent.session.header.plan === true })
     } else {
-      ctx.tools.register(dshTool(name))
+      ctx.tools.register(definition)
     }
   }
 
@@ -108,6 +111,14 @@ test('step admission keeps opencode hidden names, model gating, and inherited co
   agent.session.header.plan = true
   const planning = await stepTools(ctx, agent, 'deepseek-v4')
   assert.ok(planning.includes('exit_plan_mode'), 'the inherited plan condition still admits the tool')
+
+  for (const name of ['glob', 'grep', 'skill']) {
+    assert.equal(
+      ctx.tools.get(name, agent),
+      originals.get(name),
+      `the identity-sensitive ${name} registration stays inherited`,
+    )
+  }
 
   const admitted = presetCtx.tools.definitions(agent)
   const read = admitted.find(tool => tool.name === 'read')

@@ -864,7 +864,7 @@ export function restrictionFor(agent) {
  * @param agent - the preparing agent.
  * @returns the route model id, or the agent's configured model.
  */
-export function currentToolModel(ctx, agent) {
+export function currentToolModel(ctx, agent, modelSelection) {
   if (agent?.session === undefined) return agent?.options?.model
   let omoRoles
   try {
@@ -874,9 +874,9 @@ export function currentToolModel(ctx, agent) {
   }
   const state = stateFor(agent)
   const position = nextPosition(agent.session)
-  const selection = typeof agent.model?.current === 'function'
+  const selection = modelSelection ?? (typeof agent.model?.current === 'function'
     ? agent.model.current()
-    : undefined
+    : undefined)
   const variables = selection ?? {
     provider: agent.options?.provider,
     model: agent.options?.model,

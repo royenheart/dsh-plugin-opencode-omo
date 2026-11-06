@@ -605,19 +605,42 @@ function createShim(toolName, original, description, parameters) {
 
 const shimmedAgents = new WeakSet()
 const HIDDEN_NAMES = new Set([...HIDDEN_DSH_DELEGATION_TOOLS, ...HIDDEN_DSH_LSP_TOOLS])
-const DESCRIPTION_ONLY_NAMES = ['glob', 'grep', 'todo_write', 'skill', 'web_fetch']
+// `glob`, `grep`, and `skill` stay inherited: their plugins compare the
+// registered definition's identity before publishing skill catalogs or spilling
+// complete search results, so a same-name shadow would silently disable those
+// contracts. `web_search` and `web_fetch` keep their provider-readiness
+// conditions through the extra `when` below.
+const DESCRIPTION_ONLY_NAMES = ['todo_write']
 
-/** The opencode/omo admission decision for one tool on one agent. */
-function toolVisibleFor(ctx, agent, name) {
+/** The opencode/omo admission decision for one tool on one agent step. */
+function toolVisibleFor(ctx, agent, name, modelSelection) {
   let model
   try {
-    model = currentToolModel(ctx, agent)
+    model = currentToolModel(ctx, agent, modelSelection)
   } catch {
     model = agent.options?.model
   }
   return opencodeTools(
     [{ name }], model, restrictionFor(agent), isDelegatedSession(agent),
   ).length === 1
+}
+
+/** The target web tools' provider-readiness condition, for the two shims that replace them. */
+function webSearchReadiness(ctx) {
+  return ({ modelSelection }) => {
+    let web
+    try {
+      web = ctx.get('web')
+    } catch {
+      web = undefined
+    }
+    if (web === undefined) return true
+    try {
+      return web.searchReady(modelSelection.provider)
+    } catch {
+      return true
+    }
+  }
 }
 
 /**
@@ -638,11 +661,12 @@ function ensureShimsFor(ctx, agent, bashEscalation) {
 
   const surface = opencodeToolSurface({ bashEscalation })
   const handled = new Set()
-  const register = (definition) => {
+  const register = (definition, extraWhen) => {
     const name = definition.name
     handled.add(name)
     agent.ctx.tools.register(definition, {
-      when: () => toolVisibleFor(ctx, agent, name),
+      when: (activation) => toolVisibleFor(ctx, agent, name, activation.modelSelection)
+        && (extraWhen === undefined || extraWhen(activation)),
     })
   }
 
@@ -678,7 +702,7 @@ function ensureShimsFor(ctx, agent, bashEscalation) {
       searchOriginal,
       surface.descriptions.web_search,
       surface.parameters.web_search,
-    ))
+    ), webSearchReadiness(ctx))
   }
 
   // Tools whose names match dsh's contract: the model-visible description (and
