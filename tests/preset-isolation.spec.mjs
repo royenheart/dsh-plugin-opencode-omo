@@ -22,6 +22,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { SkillRegistry } from '@deepseek-ai/dsh-skill'
 import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
 import { apply as applyCommentChecker } from '../presets/opencode-omo/comment-checker.mjs'
+import { stubToolExecutor } from './support/stub-executor.mjs'
 import { SUBAGENT_TYPE_DEFS } from '../presets/opencode-omo/task-shim.mjs'
 
 const require = createRequire(import.meta.url)
@@ -239,6 +240,7 @@ test('sibling tools and prompts stay identical after this plugin loads', async (
   await ctx.plugin({ name: 'stub-fs', apply(host) { host.plugin(StubFs) } })
   await ctx.plugin(SystemPrompt, { persona: 'You are a helpful software engineer assistant.' })
   await ctx.plugin(ToolRuntime)
+  ctx.tools.setExecutor(stubToolExecutor())
   ctx.systemPrompt.context({ name: 'runtime:cwd', order: 0, text: '/workspace' })
 
   const inject = ['tools', 'systemPrompt', 'fs']

@@ -135,13 +135,9 @@ export function apply(ctx) {
         return { ...section, text: rewriteJobsPromptSection(section.text) }
       })
       : transformed.sections
-    return {
-      ...transformed,
-      sections,
-      tools: applyOmoDelegationCatalog(transformed.tools, {
-        allowSendMessage: isDelegatedSession(context.agent),
-      }),
-    }
+    // Tool visibility moved to per-agent registration conditions; the
+    // waterfall may only rewrite sections/contexts/variables.
+    return { ...transformed, sections }
   })
 
   ctx.on('agent/pre-step', async (_payload, next) => {

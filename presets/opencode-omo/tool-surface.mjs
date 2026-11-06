@@ -2,17 +2,21 @@
 // match opencode's tool descriptions/parameters as closely as the dsh execution
 // layer allows. Execution shims are registered per agent so they shadow the
 // standing preset's inherited read/edit/write definitions in the tool registry;
-// the system-prompt/assemble waterfall replaces the authoritative model-visible
-// schema text for every matched tool.
+// each registration carries the same `when` admission the step's tool set uses,
+// because 0.2.1+ no longer lets `system-prompt/assemble` rewrite tool schemas.
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, extname } from 'node:path'
 import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
 import { defineTool, parameterSchemaSpecToJsonSchema } from '@deepseek-ai/dsh-tools'
-import { ESCALATION_GUIDANCE, ESCALATION_PARAMETERS, escalationAvailableFor } from './escalating-bash.mjs'
-import { applyOmoDelegationCatalog } from './delegation-surface.mjs'
+import {
+  ESCALATION_GUIDANCE, ESCALATION_PARAMETERS, escalationAvailableFor, setBashDescriptionProvider,
+} from './escalating-bash.mjs'
+import { HIDDEN_DSH_DELEGATION_TOOLS } from './delegation-surface.mjs'
+import { HIDDEN_DSH_LSP_TOOLS } from './lsp-surface.mjs'
 import { isDelegatedSession } from './delegated-session.mjs'
-import { applyOmoLspCatalog } from './lsp-surface.mjs'
+import { opencodeTools, toolAllowed } from './tool-policy.mjs'
+import { currentToolModel, restrictionFor } from './driver.mjs'
 
 export const name = 'opencode-omo-tool-surface'
 export const inject = ['tools']
@@ -315,6 +319,11 @@ export function bashDescription(options = {}) {
     .split('${commandSection}').join(commandSection)
 }
 
+// The escalating-bash shim owns the per-agent `bash` registration, so it asks
+// this module for opencode's description instead of registering a second
+// same-name shadow in the agent scope.
+setBashDescriptionProvider(() => bashDescription())
+
 /**
  * Author-facing opencode parameter specs. read/edit/write/web_search also
  * have execution shims that convert these names into the dsh contract.
@@ -595,47 +604,131 @@ function createShim(toolName, original, description, parameters) {
 }
 
 const shimmedAgents = new WeakSet()
+const HIDDEN_NAMES = new Set([...HIDDEN_DSH_DELEGATION_TOOLS, ...HIDDEN_DSH_LSP_TOOLS])
+const DESCRIPTION_ONLY_NAMES = ['glob', 'grep', 'todo_write', 'skill', 'web_fetch']
 
-function ensureShimsFor(ctx, agent) {
+/** The opencode/omo admission decision for one tool on one agent. */
+function toolVisibleFor(ctx, agent, name) {
+  let model
+  try {
+    model = currentToolModel(ctx, agent)
+  } catch {
+    model = agent.options?.model
+  }
+  return opencodeTools(
+    [{ name }], model, restrictionFor(agent), isDelegatedSession(agent),
+  ).length === 1
+}
+
+/**
+ * Register the preset's model-visible surface in the agent's own tool layer.
+ *
+ * `system-prompt/assemble` used to rewrite the tool array. The current harness
+ * owns declarations in step admission, so every shadow carries a `when`
+ * condition with the same hidden-name/model-family/role-restriction predicate
+ * as the execution-side gate in driver.mjs.
+ * @param ctx - preset context.
+ * @param agent - the created agent.
+ * @param bashEscalation - whether the composed shell can escalate.
+ */
+function ensureShimsFor(ctx, agent, bashEscalation) {
   if (agent === undefined || agent?.ctx?.tools === undefined) return
   if (shimmedAgents.has(agent)) return
   shimmedAgents.add(agent)
 
+  const surface = opencodeToolSurface({ bashEscalation })
+  const handled = new Set()
+  const register = (definition) => {
+    const name = definition.name
+    handled.add(name)
+    agent.ctx.tools.register(definition, {
+      when: () => toolVisibleFor(ctx, agent, name),
+    })
+  }
+
   const readImageOriginal = ctx.tools.get('read_image', agent)
-  const readImagePresent = readImageOriginal !== undefined
   if (readImageOriginal !== undefined) {
-    agent.ctx.tools.register(createReadImageShim(readImageOriginal, ctx))
+    register(createReadImageShim(readImageOriginal, ctx))
   }
 
   const readOriginal = ctx.tools.get('read', agent)
   if (readOriginal !== undefined) {
-    agent.ctx.tools.register(createReadShim(
+    register(createReadShim(
       readOriginal,
       ctx,
-      readDescriptionFor(readImagePresent),
+      readDescriptionFor(readImageOriginal !== undefined),
       OPENCODE_PARAMS.read,
     ))
   }
 
   const editOriginal = ctx.tools.get('edit', agent)
   if (editOriginal !== undefined) {
-    agent.ctx.tools.register(createShim('edit', editOriginal, EDIT_TXT, OPENCODE_PARAMS.edit))
+    register(createShim('edit', editOriginal, surface.descriptions.edit, surface.parameters.edit))
   }
 
   const writeOriginal = ctx.tools.get('write', agent)
   if (writeOriginal !== undefined) {
-    agent.ctx.tools.register(createShim('write', writeOriginal, WRITE_TXT, OPENCODE_PARAMS.write))
+    register(createShim('write', writeOriginal, surface.descriptions.write, surface.parameters.write))
   }
 
   const searchOriginal = ctx.tools.get('web_search', agent)
   if (searchOriginal !== undefined) {
-    const year = new Date().getFullYear()
-    agent.ctx.tools.register(createShim(
+    register(createShim(
       'web_search',
       searchOriginal,
-      WEBSEARCH_TXT.replaceAll('{{year}}', String(year)),
-      OPENCODE_PARAMS.web_search,
+      surface.descriptions.web_search,
+      surface.parameters.web_search,
     ))
+  }
+
+  // Tools whose names match dsh's contract: the model-visible description (and
+  // the opencode parameter spec where it differs) is the only override.
+  for (const name of DESCRIPTION_ONLY_NAMES) {
+    const original = ctx.tools.get(name, agent)
+    if (original === undefined || handled.has(name)) continue
+    const description = surface.descriptions[name]
+    const parameters = surface.parameters[name]
+    register({
+      ...original,
+      ...(description === undefined ? {} : { description }),
+      ...(parameters === undefined
+        ? {}
+        : { parameters: parameterSchemaSpecToJsonSchema(parameters) }),
+    })
+  }
+
+  // The escalating-bash row owns `bash` in this same agent scope and already
+  // carries the shared admission condition, so do not register a duplicate.
+  if (ctx.tools.get('bash', agent) !== undefined) handled.add('bash')
+
+  // apply_patch is a global preset tool, but its model family is decided per
+  // step. A conditional scoped copy keeps the same execution definition while
+  // hiding it from edit/write routes.
+  const patchOriginal = ctx.tools.get('apply_patch', agent)
+  if (patchOriginal !== undefined && !handled.has('apply_patch')) {
+    register({ ...patchOriginal })
+  }
+
+  // Tools this module does not shadow stay inherited registrations, so a
+  // scoped restriction preserves their own `when` condition (for example
+  // plan-mode's `exit_plan_mode`). Scoped shadows above bypass restrictions,
+  // which is why each carries the same admission predicate.
+  const delegated = isDelegatedSession(agent)
+  const restriction = restrictionFor(agent)
+  const inherited = ctx.tools.definitions(agent)
+    .map(tool => tool.name)
+    .filter(name => !handled.has(name))
+  const denied = new Set()
+  for (const name of inherited) {
+    if (HIDDEN_NAMES.has(name) && !(delegated && name === 'send_message')) denied.add(name)
+  }
+  if (restriction !== undefined) {
+    for (const name of inherited) {
+      if (!toolAllowed(name, restriction, delegated)) denied.add(name)
+    }
+  }
+  if (denied.size > 0) {
+    agent.ctx.tools.restrict({ deny: [...denied] })
   }
 }
 
@@ -648,19 +741,16 @@ export function apply(ctx) {
   // shadow the preset's inherited read/edit/write/web_search definitions without
   // touching the standing layer (which would reject a same-name insert).
   ctx.on('agent/created', ({ agent }) => {
-    ensureShimsFor(ctx, agent)
+    ensureShimsFor(ctx, agent, bashEscalation)
   })
 
-  // Authoritative model-visible replacement, after the base assembly has run.
+  // A late agent (for example one restored through a composition that loaded
+  // this row after its creation) still gets the per-agent surface. Tool
+  // declarations themselves are step-admitted, so this waterfall only ensures
+  // the scoped registrations exist.
   ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const transformed = await next()
-    if (context.agent !== undefined) ensureShimsFor(ctx, context.agent)
-    return {
-      ...transformed,
-      tools: applyOmoLspCatalog(applyOmoDelegationCatalog(
-        applyOpencodeSurface(transformed.tools, { bashEscalation }),
-        { allowSendMessage: isDelegatedSession(context.agent) },
-      )),
-    }
+    if (context.agent !== undefined) ensureShimsFor(ctx, context.agent, bashEscalation)
+    return transformed
   })
 }

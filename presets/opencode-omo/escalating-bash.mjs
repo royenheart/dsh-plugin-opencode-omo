@@ -24,9 +24,24 @@ import {
   escalationHintMarker,
   validateEscalationArgs,
 } from '@deepseek-ai/dsh-sandbox'
+import { isDelegatedSession } from './delegated-session.mjs'
+import { currentToolModel, restrictionFor } from './driver.mjs'
+import { toolVisible } from './tool-policy.mjs'
 
 export const name = 'opencode-omo-escalating-bash'
 export const inject = ['tools']
+
+/**
+ * The tool-surface module owns opencode's rendered bash profile. It installs
+ * this provider at module load so the single per-agent `bash` registration can
+ * carry that description without a second same-name shadow.
+ */
+let bashDescriptionProvider
+
+/** Install the model-visible bash description provider. */
+export function setBashDescriptionProvider(provider) {
+  bashDescriptionProvider = provider
+}
 
 /**
  * The schema fields advertised only when the composition can escalate. The
@@ -108,7 +123,9 @@ function shimBashFor(ctx, agent) {
 
   agent.ctx.tools.register(defineTool({
     name: 'bash',
-    description: original.description + (available ? ESCALATION_GUIDANCE : ''),
+    description: (typeof bashDescriptionProvider === 'function'
+      ? bashDescriptionProvider()
+      : original.description) + (available ? ESCALATION_GUIDANCE : ''),
     parameters: {
       command: commandParameter,
       ...(available ? ESCALATION_PARAMETERS : {}),
@@ -161,7 +178,13 @@ function shimBashFor(ctx, agent) {
     ...(typeof original.presentCall === 'function'
       ? { presentCall: args => original.presentCall({ command: args.command }) }
       : {}),
-  }))
+  }), {
+    // Same step admission as every other preset tool: a delegated-role allow
+    // list or the hidden-name catalog can remove the shell entry.
+    when: () => toolVisible(
+      'bash', currentToolModel(ctx, agent), restrictionFor(agent), isDelegatedSession(agent),
+    ),
+  })
 }
 
 export function apply(ctx) {

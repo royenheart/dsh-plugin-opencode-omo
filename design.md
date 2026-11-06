@@ -19,7 +19,7 @@ seam:
 |---|---|
 | Whole opencode+omo system prompt (env block + role prompt + plan prompt) per step | `ctx.systemPrompt.section({ complete: true, text: () => ... })` — the text provider is re-evaluated on every assembly and reads the exact initiator through `ctx.agents.currentInitiator()` |
 | Suppress harness identity + runtime snapshot | `complete: true` + `ctx.systemPrompt.suppressRuntimeContext()` |
-| opencode per-model tool gating (apply_patch vs edit/write) | `system-prompt/assemble` waterfall mutates `assembly.tools` |
+| opencode per-model tool gating (apply_patch vs edit/write) | per-agent `ctx.tools.register(..., { when })` conditions plus scoped restrictions over inherited tools; `system-prompt/assemble` no longer owns tool declarations |
 | Ultrawork keyword detection before assembly | `agent/inbox/claimed` (fires inside `preStep` before `systemPrompt.assemble`) |
 | maxSteps + verbatim MAX_STEPS_PROMPT | patched request-only assistant tail; system-prompt section on a stock host |
 | Role primary model + ultrawork override | `agent/request` waterfall |
@@ -32,7 +32,7 @@ probe tests against the dsh test harness: complete persona replacement, gpt
 tool gating, role route, request-error fallback, max-steps injection, and
 ultrawork routing all fire with a plain `ReactLoopAgent`.
 
-## Current fidelity posture (dsh 0.2.1-rc.2)
+## Current fidelity posture (dsh 0.2.2-rc.1)
 
 1. `PreStepDecision.assistantPrefill` is still absent upstream. This plugin
    ships `patches/0001-agent-pre-step-assistant-prefill.patch`, which adds a
@@ -45,7 +45,7 @@ ultrawork routing all fire with a plain `ReactLoopAgent`.
    and request reconstruction (header vs live assembly). Transcript, stats, and
    compaction still omit the ceiling text on both paths.
 
-2. The complete persona text provider has no turn/step argument, and 0.2.1's
+2. The complete persona text provider has no turn/step argument, and the current
    `AssembleContext` no longer carries an Agent. The assembly reads the exact
    initiator through `ctx.agents.currentInitiator()`; the step about to run is
    inferred from `session.snapshotEvents()` (`turn/start` + last `step/start`),
@@ -54,10 +54,11 @@ ultrawork routing all fire with a plain `ReactLoopAgent`.
    fallback retry the reused assembly keeps the primary route's model id and
    tool table instead of re-rendering for the fallback model (openCode
    re-renders per attempt); the request route itself advances to the fallback.
-4. Tool gating filters the request schemas through the assembly waterfall and
-   is mirrored at execution by `tools/pre-execute` (`gateToolCall`), so a
-   hallucinated call outside the model-family/role surface is denied before it
-   reaches the default loop's registry.
+4. Tool gating is step admission: per-agent conditional registrations and
+   scoped restrictions filter the request catalog, and `tools/pre-execute`
+   (`gateToolCall`) mirrors the same predicate at execution, so a hallucinated
+   call outside the model-family/role surface is denied before it reaches the
+   default loop's registry.
 
 ## dsh-side footprint after the re-scan
 
@@ -73,7 +74,7 @@ plugin-specific branch.
   documented system-prompt fallback otherwise. Discussion #2407 is the upstream
   ask for the same seam.
 
-Everything else runs on an unmodified 0.2.1-rc.2 checkout.
+Everything else runs on an unmodified 0.2.2-rc.1 checkout.
 
 
 ## State and policy authority
