@@ -1,17 +1,17 @@
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index adf2e33d..0c7f8bee 100644
+index c4daa50c..9f75441c 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
-@@ -57,6 +57,8 @@ type PreparedStep =
+@@ -68,6 +68,8 @@ type PreparedStep =
      kind: 'enter'
      messages: UserMessage[]
      startsRequestSeries?: true
 +    /** Request-only assistant tail admitted for this step's request. */
 +    assistantPrefill?: string
      assembly: PromptAssembly
-   }
- 
-@@ -439,7 +441,10 @@ export class ReactLoopAgent implements Agent {
+     selection: Readonly<ModelSelection>
+     /** Admission shared by the step's declarations and dispatch; the turn disposes it after the step. */
+@@ -476,7 +478,10 @@ export class ReactLoopAgent implements Agent {
          this.session.append('user/message', context, { surfaceOp: 'append' })
        }
        firstAttempt = false
@@ -23,7 +23,7 @@ index adf2e33d..0c7f8bee 100644
        const live = new AssistantStreamAttempt(
          this.session.id,
          ++this.assistantAttemptCounter,
-@@ -619,6 +624,7 @@ export class ReactLoopAgent implements Agent {
+@@ -659,6 +664,7 @@ export class ReactLoopAgent implements Agent {
      tools: GenerateOptions['tools'] & object,
      position: { turn: number; step: number },
      startsRequestSeries: boolean,
@@ -31,7 +31,7 @@ index adf2e33d..0c7f8bee 100644
      signal: AbortSignal,
    ): GenerateOptions {
      const { session } = this
-@@ -627,6 +633,7 @@ export class ReactLoopAgent implements Agent {
+@@ -667,6 +673,7 @@ export class ReactLoopAgent implements Agent {
        config,
        ...preparedCall === undefined ? {} : { adapterDefaults: preparedCall.adapterDefaults },
        ...tools.length > 0 ? { tools } : {},
@@ -39,7 +39,7 @@ index adf2e33d..0c7f8bee 100644
      })
      const baseline = this.session.requestHeader()
      const startsSeries = startsRequestSeries
-@@ -692,9 +699,19 @@ export class ReactLoopAgent implements Agent {
+@@ -732,9 +739,19 @@ export class ReactLoopAgent implements Agent {
        this.frozenMessages.add(message)
      }
      Object.freeze(boundaryMessages)
@@ -61,10 +61,10 @@ index adf2e33d..0c7f8bee 100644
        ...header.tools !== undefined ? { tools: header.tools } : {},
        sessionId: this.session.id,
 diff --git a/packages/core/agent-loop/src/index.ts b/packages/core/agent-loop/src/index.ts
-index ca4532af..2fa6cba3 100644
+index 381ef6e9..fdd272ea 100644
 --- a/packages/core/agent-loop/src/index.ts
 +++ b/packages/core/agent-loop/src/index.ts
-@@ -358,6 +358,11 @@ export class AgentLoop extends Service implements AgentFactory {
+@@ -308,6 +308,11 @@ export class AgentLoop extends Service implements AgentFactory {
  
    /** Validated configuration owned by the agent-loop service. */
    readonly config: Config
@@ -78,16 +78,17 @@ index ca4532af..2fa6cba3 100644
    private readonly runtime: { ctx: Context }
 diff --git a/packages/core/agent-loop/tests/assistant-prefill.spec.ts b/packages/core/agent-loop/tests/assistant-prefill.spec.ts
 new file mode 100644
-index 00000000..4e7b2990
+index 00000000..63f30159
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/assistant-prefill.spec.ts
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,64 @@
 +import { describe, expect, it } from 'vitest'
 +import { Context } from '@deepseek-ai/cordis'
 +import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
 +import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 +import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 +import ToolRuntime from '@deepseek-ai/dsh-tools'
++import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 +import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 +import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 +import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -100,6 +101,7 @@ index 00000000..4e7b2990
 +  await ctx.plugin(SessionProjectionRegistry)
 +  await ctx.plugin(SystemPrompt)
 +  await ctx.plugin(ToolRuntime)
++  await ctx.plugin(NativeToolExecutor)
 +  await ctx.plugin(AgentRegistry)
 +  await ctx.plugin(AgentLoop, { agents: [] })
 +  ctx.llm.registerAdapter(['mock'], adapter)
@@ -145,10 +147,10 @@ index 00000000..4e7b2990
 +  })
 +})
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 0fa89afc..66891e37 100644
+index 2b1698e3..6da1c699 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
-@@ -116,6 +116,12 @@ export type PreStepDecision =
+@@ -143,6 +143,12 @@ export type PreStepDecision =
      messages: UserMessage[]
      /** Start a distinct model-message series before this step's admitted messages. */
      startsRequestSeries?: true
@@ -184,10 +186,10 @@ index 326165a1..6ffd7f40 100644
    const at = a.tools ?? []
    const bt = b.tools ?? []
 diff --git a/packages/core/session/src/types.ts b/packages/core/session/src/types.ts
-index e0931f22..bd0ade49 100644
+index 7787dd9b..1bf878ac 100644
 --- a/packages/core/session/src/types.ts
 +++ b/packages/core/session/src/types.ts
-@@ -245,6 +245,12 @@ export interface EpochHeader {
+@@ -250,6 +250,12 @@ export interface EpochHeader {
    adapterDefaults?: LlmCallConfigAdapterDefaults
    /** Assembled tool schemas; absent for a tool-less request. */
    tools?: ToolSchema[]
@@ -201,9 +203,20 @@ index e0931f22..bd0ade49 100644
     * @persistenceReserved
     */
 diff --git a/packages/llm/token-meter/src/estimate.ts b/packages/llm/token-meter/src/estimate.ts
-index ca54abf6..da5d964b 100644
+index ca54abf6..998f4b97 100644
 --- a/packages/llm/token-meter/src/estimate.ts
 +++ b/packages/llm/token-meter/src/estimate.ts
+@@ -91,8 +91,8 @@ export function estimateMessage(message: Message): number {
+ }
+ 
+ /**
+- * Price the tool-schema part of a canonical request envelope — the envelope's
+- * only priced field, since the system prompt is a surface node.
++ * Price the tool-schema part of a canonical request envelope; the system
++ * prompt is a surface node rather than an envelope field.
+  * @param header - canonical envelope, or undefined before any request.
+  * @returns heuristic tool-schema tokens; 0 when absent or empty.
+  */
 @@ -100,3 +100,22 @@ export function estimateToolsTokens(header: EpochHeader | undefined): number {
    if (header?.tools === undefined || header.tools.length === 0) return 0
    return Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD
@@ -228,28 +241,28 @@ index ca54abf6..da5d964b 100644
 +  return estimateToolsTokens(header) + estimateAssistantPrefillTokens(header)
 +}
 diff --git a/packages/llm/token-meter/src/index.ts b/packages/llm/token-meter/src/index.ts
-index f721d262..11bd82db 100644
+index 8b4f7fff..33739995 100644
 --- a/packages/llm/token-meter/src/index.ts
 +++ b/packages/llm/token-meter/src/index.ts
-@@ -32,7 +32,7 @@ import type {
- } from './types.ts'
+@@ -33,7 +33,7 @@ import type {
  import { contextBreakdownProjectionDefinition } from './breakdown-projection.ts'
  import { contextPressureProjectionDefinition, tokenUsageProjectionDefinition } from './usage-projection.ts'
--import { estimateContent, estimateMessage, estimateToolsTokens, ROLE_OVERHEAD } from './estimate.ts'
-+import { estimateContent, estimateHeaderTokens, estimateMessage, ROLE_OVERHEAD } from './estimate.ts'
+ import type { ContextPressureState } from './usage-projection.ts'
+-import { estimateMessage, estimateToolsTokens } from './estimate.ts'
++import { estimateHeaderTokens, estimateMessage } from './estimate.ts'
+ import { advanceMeasurement, measurementProjectionDefinition } from './measurement-projection.ts'
+ import type { MeasurementState } from './measurement-projection.ts'
  import { commitSurfaceTokens, planSurfaceTokens } from './surface-fold.ts'
- import type { MeterSurfaceNode } from './surface-fold.ts'
- import { priceSurface } from './route-pricing.ts'
-@@ -161,7 +161,7 @@ export class TokenMeter extends Service {
+@@ -166,7 +166,7 @@ export class TokenMeter extends Service {
        // compares like with like.
-       const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing, fileText).surfaceTokens
+       const anchorSurfaceTokens = priceSurface(state.anchorNodes, pricing, fileText).surfaceTokens
          + anchor.assistantTokens
 -      const estimatedAnchorTokens = estimateToolsTokens(header) + anchorSurfaceTokens
 +      const estimatedAnchorTokens = estimateHeaderTokens(header) + anchorSurfaceTokens
        const usage = anchor.usage
        // Signed heuristic deltas remain conservative only from an anchor
        // that is at least as large as the matching full heuristic price.
-@@ -175,7 +175,7 @@ export class TokenMeter extends Service {
+@@ -180,7 +180,7 @@ export class TokenMeter extends Service {
      } else {
        baseline = {
          kind: 'estimated',

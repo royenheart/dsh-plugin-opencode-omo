@@ -19,7 +19,7 @@ A DeepSeek Harness plugin that adds an `opencode-omo` agent preset (mode) to the
 - **omo context injection** — AGENTS.md/CLAUDE.md walk-up + `skills/` + omo's `rules-injector` (`.omo/rules`, `.cursor/rules`, `.github/instructions`, `copilot-instructions.md`).
 - **omo hooks** — `comment-checker` (rejects AI-slop comments on write/edit), `hashline` (read tagging `N#HH|content` + `hashline_edit` stale-ref guard).
 - **per-mode execution backend** — local filesystem (`dsh-fs-local`) + persistent PTY shell, isolated from other modes' sandboxed fs/shell.
-- **native-seam loop shim** — no dsh-side driver seam. `driver.mjs` is an ordinary preset plugin using the shipped seams: a dynamic `ctx.systemPrompt.section({ complete: true })` recomputes opencode's env block and the selected omo role prompt per assembly; `system-prompt/assemble` applies opencode's model tool gating, and both the request catalog and the prompt's generated tool table run through the same hidden-name/model-family/role filter; `agent/inbox/claimed`, `agent/pre-step`, `agent/request`, and `agent/request-error` provide ultrawork detection, maxSteps, role model routing, and fallback retry. Other presets are untouched by construction.
+- **native-seam loop shim** — no dsh-side driver seam. `driver.mjs` is an ordinary preset plugin using the shipped seams: a dynamic `ctx.systemPrompt.section({ complete: true })` recomputes opencode's env block and the selected omo role prompt per assembly; per-agent conditional registrations (`ctx.tools.register(..., { when })` plus scoped restrictions) apply opencode's model tool gating, and both the step-admitted request catalog and the prompt's generated tool table run through the same hidden-name/model-family/role filter; `agent/inbox/claimed`, `agent/pre-step`, `agent/request`, and `agent/request-error` provide ultrawork detection, maxSteps, role model routing, and fallback retry. Other presets are untouched by construction.
 
 ## Layout
 
@@ -87,20 +87,25 @@ then restart dsh.
 
 ## Required dsh-side changes
 
-One patch is still required for the complete opencode surface:
+One dsh-side change is still required for the complete opencode surface:
 
-`patches/0001-agent-pre-step-assistant-prefill.patch` (rebased onto
-`dsh-v0.2.1-rc.2`) adds `PreStepDecision.assistantPrefill`, a request-only
-assistant tail. The loop logs it on `request/header`, appends it to exactly the
-request that asked for it, and prices it in token pressure; it is never a
-session `assistant/message`, so transcript, compaction, and stats stay clean.
+- `patches/0001-agent-pre-step-assistant-prefill.patch` — targeting the active
+  `0.2.2-rc.1` baseline (`66491b05`).
+
+It adds `PreStepDecision.assistantPrefill`, a request-only assistant tail. The
+loop logs it on `request/header`, appends it to exactly the request that asked
+for it, and prices it in token pressure; it is never a session
+`assistant/message`, so transcript, compaction, and stats stay clean.
 
 Apply it to the dsh checkout with the instructions in
 [`patches/README.md`](patches/README.md); `install.py` does not modify the harness
 checkout. Without the patch the preset still loads and uses the fallback below.
+The active peer baseline is `0.2.2-rc.1`; the patch is rebased and verified on
+that checkout, so the declared support claim and the patched path target the
+same release.
 
 **Why the patch is still required.** opencode appends `MAX_STEPS_PROMPT` as an
-assistant-role continuation on the ceiling step. Official 0.2.1
+assistant-role continuation on the ceiling step. Official 0.2.2-rc.1
 `PreStepDecision` is still `reject | { kind: 'enter', messages, startsRequestSeries? }`,
 and `agent/request` cannot mutate request messages, so no official extension
 point can express a request-only assistant tail. Upstream request:
@@ -114,7 +119,7 @@ table below); that is survivability, not the complete opencode surface.
 
 ### Fallback on unpatched hosts
 
-| Surface | opencode / patched harness | This plugin on a stock 0.2.1 host |
+| Surface | opencode / patched harness | This plugin on a stock 0.2.2-rc.1 host |
 |---|---|---|
 | Role of `MAX_STEPS_PROMPT` | Assistant-role continuation at the end of the request | System-prompt section for that step |
 | Session transcript / stats / compaction | Request-only (header), not a session message | Also not a session message (system section is reassembled) |
@@ -132,6 +137,13 @@ Everything else runs on unmodified dsh seams: the preset is declared by the
 official `@deepseek-ai/dsh-agent-preset` row, the role picker occupies the
 existing `conversation.input.left` slot, and role settings use the official
 settings form Remote.
+
+The active 0.2.2-rc.1 baseline also removes the retired
+`system-prompt/assemble` tool-array mutation: step-owned
+`ctx.tools.register(..., { when })` conditions now carry opencode's
+hidden-name/model-family/role gate, while inherited tools keep their own
+conditions through scoped restrictions. The conditional-tool API landed in
+0.2.1-rc.2, so no extra harness patch is needed for that port.
 
 ## Bench experiments (equivalence validation)
 
@@ -166,7 +178,7 @@ Active combination: `opencode-1.17.11+omo-5.0.0-beta.31`.
 | opencode | `1.17.11` | `67aec221` | tool descriptions, persona, plan/build/MAX_STEPS text |
 | oh-my-openagent | `5.0.0-beta.31` | `62ed7952` | Sisyphus family, Atlas, Hephaestus, Oracle/Metis/Momus prompts |
 | oh-my-openagent | `4.19.0` | `14083b89` | librarian / explore / multimodal-looker prompts |
-| dsh | `0.2.1-rc.2` | `687f282` | host peer target |
+| dsh | `0.2.2-rc.1` | `66491b0` | host peer target |
 
 `explore` and `multimodal-looker` are identical in both omo versions;
 `librarian` stays on v4.19.0 until the context7-specific v5 diff is adapted to
@@ -192,7 +204,7 @@ Tracking: [#17](https://github.com/royenheart/dsh-plugin-opencode-omo/issues/17)
 
 ## Remaining gaps
 
-1. **maxSteps role (patched seam + stock fallback)**: `patches/0001` gives the assistant-role request tail on a patched host. A stock 0.2.1 host still gets the same `MAX_STEPS_PROMPT` text and trigger as a system-prompt section, so models may treat the role differently. Tracked upstream as [discussion #2407](https://github.com/deepseek-ai/deepseek-harness/discussions/2407).
+1. **maxSteps role (patched seam + stock fallback)**: `patches/0001` gives the assistant-role request tail on a patched host. A stock 0.2.2-rc.1 host still gets the same `MAX_STEPS_PROMPT` text and trigger as a system-prompt section, so models may treat the role differently. Tracked upstream as [discussion #2407](https://github.com/deepseek-ai/deepseek-harness/discussions/2407).
 2. **dsh-side (proposal, medium)**: `GenerateOptions.format` / `toolChoice`. omo's regular path does not use them; the standalone structured-output plugin covers the common route.
 3. Child subagent per-role sampling cannot reliably resolve the role id (dsh child headers/descriptors do not carry it); primary-role sampling defaults ARE applied and children inherit the session model.
 4. Plan files: dsh itself does not persist them; the plugin writes `.opencode/plans/*` after `exit_plan_mode` approval. A first-class plan-file seam remains an optional improvement.

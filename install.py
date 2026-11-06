@@ -4,7 +4,7 @@
 The plugin is a dsh BUNDLE whose patch declares its host row (role registry +
 volatile settings entry) and the official `@deepseek-ai/dsh-agent-preset` row
 for `opencode-omo`. No user-preset-root copy is published: the bundle
-declaration is the single roster entry on 0.2.1.
+declaration is the single roster entry on 0.2.2-rc.1.
 
 Installing it requires:
 

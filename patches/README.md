@@ -3,7 +3,9 @@
 ## `0001-agent-pre-step-assistant-prefill.patch`
 
 This patch is required for the documented opencode `MAX_STEPS_PROMPT` surface.
-It applies to `dsh-v0.2.1-rc.2` (tag commit `687f282`).
+It applies to `dsh-v0.2.2-rc.1` (tag commit `66491b0`). The earlier variant for
+the retired `0.2.1-rc.2` baseline is no longer shipped: the declared baseline
+and this patch now target the same release.
 
 It adds:
 
@@ -20,7 +22,7 @@ It adds:
 
 ## Why no official seam replaces it
 
-On 0.2.1 `PreStepDecision` is still
+On 0.2.2-rc.1 `PreStepDecision` is still
 `{ kind: 'reject' } | { kind: 'enter', messages, startsRequestSeries? }`, and
 `agent/request` may change route/sampling but not request messages. opencode
 puts the ceiling text in an assistant-role request tail; a system prompt is a
@@ -31,9 +33,20 @@ Upstream request: https://github.com/deepseek-ai/deepseek-harness/discussions/24
 ## Applying
 
 ```sh
-cd /path/to/deepseek-harness       # at dsh-v0.2.1-rc.2
+cd /path/to/deepseek-harness       # at dsh-v0.2.2-rc.1
 git apply /path/to/dsh-plugin-opencode-omo/patches/0001-agent-pre-step-assistant-prefill.patch
 ```
+
+The patch was verified on `66491b0` with:
+
+```sh
+vitest run packages/core/agent-loop/tests/assistant-prefill.spec.ts \
+  packages/core/agent-loop/tests/interception.spec.ts \
+  packages/core/session/tests/request-header.spec.ts \
+  packages/llm/token-meter/tests/token-meter.spec.ts
+```
+
+Result: 4 files, 59 tests passed.
 
 The plugin selects the patched path only when
 `ctx.agentLoop.supportsAssistantPrefill === true`. A stock host keeps the same

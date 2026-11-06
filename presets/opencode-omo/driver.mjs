@@ -6,8 +6,8 @@
 //   the section text provider receives the agent, so the opencode+omo whole
 //   system prompt (env block + role prompt + plan prompt) is computed at every
 //   assembly instead of being built by an overridden loop method.
-// - `system-prompt/assemble` waterfall applies opencode's per-model tool gating
-//   (apply_patch vs edit/write) to the request's tool schemas.
+// - per-agent conditional tool registrations apply opencode's per-model tool
+//   gating (apply_patch vs edit/write) to step admission.
 // - `agent/inbox/claimed` detects omo ultrawork keywords before assembly.
 // - `agent/request` / `agent/request-error` route through the role's primary
 //   model and advance the fallback chain, exactly like the previous subclass.
@@ -20,9 +20,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { applyOmoDelegationCatalog } from './delegation-surface.mjs'
 import { isDelegatedSession } from './delegated-session.mjs'
-import { applyOmoLspCatalog } from './lsp-surface.mjs'
+import { opencodeTools, opencodeUsesPatch, toolAllowed } from './tool-policy.mjs'
 import { restrictionForRole } from './delegation-restrictions.mjs'
 import { renderRulesFor } from './rules.mjs'
 import { KNOWN_CATEGORIES, roleForDelegationCall, toolRestrictionForDelegation } from './task-shim.mjs'
@@ -42,6 +41,8 @@ let assistantPrefillSupported = false
 
 /** Restriction pinned to a delegated child by its named tool / task(subagent_type). */
 const childRestrictions = new Map()
+/** Per-session route/prompt state shared by assembly, request, and tool admission. */
+const states = new Map()
 /** Resumed children whose pin is missing/invalid use the read-only prompt role. */
 const childPromptRoles = new Map()
 
@@ -672,42 +673,6 @@ function dynamicSisyphusSections(tools, model) {
   ].join('\n')
 }
 
-/**
- * opencode's model-dependent tool gating (tool/registry.ts):
- * gpt non-oss models (except gpt-4) get apply_patch INSTEAD of edit/write.
- */
-function opencodeUsesPatch(model) {
-  return typeof model === 'string'
-    && model.includes('gpt-')
-    && !model.includes('oss')
-    && !model.includes('gpt-4')
-}
-
-function opencodeTools(tools, model, restriction, allowSendMessage = false) {
-  if (!Array.isArray(tools)) return tools
-  const usePatch = opencodeUsesPatch(model)
-  return applyOmoLspCatalog(applyOmoDelegationCatalog(tools, { allowSendMessage })).filter(tool => {
-    // Role restrictions apply to every model family, including the write
-    // tools. Otherwise a read-only specialist on a GPT route could actually
-    // execute apply_patch while the non-GPT view only looked inconsistent.
-    if (!toolAllowed(tool.name, restriction, allowSendMessage)) return false
-    if (tool.name === 'apply_patch') return usePatch
-    if (tool.name === 'edit' || tool.name === 'write') return !usePatch
-    return true
-  })
-}
-
-/** Whether one tool name survives a delegated child's inherited restriction. */
-function toolAllowed(name, restriction, allowSendMessage = false) {
-  // Children must be able to return their result even when the role's allow
-  // list is narrow (multimodal-looker keeps only read/read_image).
-  if (allowSendMessage && name === 'send_message') return true
-  if (restriction === undefined) return true
-  if (Array.isArray(restriction.allow)) return restriction.allow.includes(name)
-  if (Array.isArray(restriction.deny)) return !restriction.deny.includes(name)
-  return true
-}
-
 /** Execution-side counterpart of the prompt-side gate (model-visible tools only). */
 function gateToolCall(name, model, restriction, allowSendMessage = false) {
   if (!toolAllowed(name, restriction, allowSendMessage)) {
@@ -810,14 +775,18 @@ function currentRouteModel(state, session, agent) {
 }
 
 /** Render the omo + opencode whole system prompt for one concrete route. */
-function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
+function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model, toolSet) {
   const session = agent.session
   const role = childPromptRoles.get(session.id) ?? omoRoles?.roleFor?.(session.id) ?? 'sisyphus'
   const restriction = restrictionFor(agent)
   // The tool table is model-facing prose the model uses to choose calls; it
-  // must match the request catalog exactly. opencodeTools applies the same
-  // hidden-name, model-family, and role-restriction filters as assembly.
-  const tools = opencodeTools(schemasFor(ctx, agent), model, restriction, isDelegatedSession(agent))
+  // must match the request catalog exactly. Prefer the step-admitted set so a
+  // conditional registration (for example plan-mode's exit_plan_mode) is
+  // reflected here too; opencodeTools then applies the same opencode filters.
+  const visible = toolSet === undefined
+    ? schemasFor(ctx, agent)
+    : (() => { try { return ctx.tools.schemas(agent, toolSet) } catch { return schemasFor(ctx, agent) } })()
+  const tools = opencodeTools(visible, model, restriction, isDelegatedSession(agent))
   // The prompt family must follow the model this step actually routes to, not
   // the session's previous route (omo re-bakes the prompt for the live model).
   const delegated = isDelegatedSession(agent)
@@ -853,13 +822,15 @@ function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model) {
  * resolves to (role primary, fallback entry, or the session's live model
  * selection), so this path is only the pre-waterfall fallback.
  */
-export function systemPromptFor(ctx, omoRoles, state, agent) {
+export function systemPromptFor(ctx, omoRoles, state, agent, assembleContext) {
   const session = agent.session
   const position = nextPosition(session)
   const route = roleRoute(omoRoles, state, session, position.turn, position.step)
   const provider = route?.provider ?? agent.options.provider ?? ''
   const model = route?.model ?? agent.options.model ?? ''
-  return renderOmoPrompt(ctx, omoRoles, state, agent, provider, model)
+  return renderOmoPrompt(
+    ctx, omoRoles, state, agent, provider, model, assembleContext?.toolSet,
+  )
 }
 
 /** Read the model-facing tool schemas as this agent sees them. */
@@ -881,8 +852,38 @@ function currentAgent(ctx) {
 }
 
 /** Tool restriction pinned to a delegated child, if any. */
-function restrictionFor(agent) {
-  return childRestrictions.get(agent.session.id)
+export function restrictionFor(agent) {
+  return childRestrictions.get(agent?.session?.id)
+}
+
+/**
+ * The model route a step's tool admission must follow. The loop resolves tool
+ * conditions before `agent/request`; this mirrors the assembly's role route so
+ * the model-visible file-tool family and the actual request agree.
+ * @param ctx - preset context.
+ * @param agent - the preparing agent.
+ * @returns the route model id, or the agent's configured model.
+ */
+export function currentToolModel(ctx, agent, modelSelection) {
+  if (agent?.session === undefined) return agent?.options?.model
+  let omoRoles
+  try {
+    omoRoles = ctx.get('omoRoles')
+  } catch {
+    omoRoles = undefined
+  }
+  const state = stateFor(agent)
+  const position = nextPosition(agent.session)
+  const selection = modelSelection ?? (typeof agent.model?.current === 'function'
+    ? agent.model.current()
+    : undefined)
+  const variables = selection ?? {
+    provider: agent.options?.provider,
+    model: agent.options?.model,
+  }
+  return finalRouteFor(
+    omoRoles, state, agent.session, position.turn, position.step, variables, agent,
+  ).model
 }
 
 /** Whether a child session has already run a turn (i.e. this is a cold resume). */
@@ -900,6 +901,16 @@ function newState() {
     lastRouteTurn: 0,
     ultraworkTurn: 0,
   }
+}
+
+/** Get or create the per-session route state. */
+function stateFor(agent) {
+  let state = states.get(agent.session.id)
+  if (state === undefined) {
+    state = newState()
+    states.set(agent.session.id, state)
+  }
+  return state
 }
 
 function currentRole(omoRoles, session) {
@@ -1062,7 +1073,6 @@ function maxStepsReached(omoRoles, session) {
 export { maxStepsSectionFor }
 
 export function apply(ctx) {
-  const states = new Map()
   let omoRoles
   try {
     omoRoles = ctx.get('omoRoles')
@@ -1073,15 +1083,6 @@ export function apply(ctx) {
   }
 
   assistantPrefillSupported = ctx.get('agentLoop')?.supportsAssistantPrefill === true
-
-  const stateFor = (agent) => {
-    let state = states.get(agent.session.id)
-    if (state === undefined) {
-      state = newState()
-      states.set(agent.session.id, state)
-    }
-    return state
-  }
 
   // The whole opencode+omo system prompt, replacing the static persona row.
   // The section is a single interpolated variable: prompt section providers
@@ -1099,20 +1100,21 @@ export function apply(ctx) {
       return '{{opencode_omo_prompt}}'
     },
   }), 'opencode-omo-loop: complete persona section')
-  ctx.effect(() => ctx.systemPrompt.variable('opencode_omo_prompt', () => {
+  ctx.effect(() => ctx.systemPrompt.variable('opencode_omo_prompt', (context) => {
     const agent = currentAgent(ctx)
     if (agent === undefined) return personaText()
-    return systemPromptFor(ctx, omoRoles, stateFor(agent), agent)
+    return systemPromptFor(ctx, omoRoles, stateFor(agent), agent, context)
   }), 'opencode-omo-loop: complete persona variable')
   ctx.systemPrompt.suppressRuntimeContext()
 
-  // opencode's per-model tool gating rides the authoritative assembly
-  // waterfall: the returned tool list is what the loop sends to the model.
-  // Prepend so this listener wraps dsh's model-selection listener (installed
-  // before the preset mounts): `next()` then returns the variables carrying
-  // the session's live provider/model, and the route stored here is the same
-  // one `agent/request` enforces on the actual LLM call.
-  ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
+  // This waterfall owns prompt variables only. Tool declarations are
+  // step-admitted by the tools registry; the per-agent registrations call the
+  // same route helper when their `when` condition runs. Prepend so this
+  // listener wraps dsh's model-selection listener (installed before the preset
+  // mounts): `next()` then returns the variables carrying the session's live
+  // provider/model, and the route stored here is the same one `agent/request`
+  // enforces on the actual LLM call.
+  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const transformed = await next()
     const agent = currentAgent(ctx)
     if (agent === undefined) return transformed
@@ -1127,14 +1129,12 @@ export function apply(ctx) {
     transformed.variables.provider = route.provider
     transformed.variables.model = route.model
     transformed.variables.opencode_omo_prompt = renderOmoPrompt(
-      ctx, omoRoles, state, agent, route.provider, route.model,
+      ctx, omoRoles, state, agent, route.provider, route.model, context?.toolSet,
     )
-    return {
-      ...transformed,
-      tools: opencodeTools(
-        transformed.tools, route.model, restrictionFor(agent), isDelegatedSession(agent),
-      ),
-    }
+    // Tool declarations are step-admitted by the tools registry. This
+    // waterfall only owns the prompt variables; rewriting `tools` here is
+    // ignored by 0.2.1+ and the per-agent registrations carry the gate.
+    return transformed
   }, { prepend: true })
 
   // Request-only assistant tail for opencode's MAX_STEPS_PROMPT. The patched
