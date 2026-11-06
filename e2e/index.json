@@ -3,7 +3,7 @@
     {
       "id": "settings-section",
       "entry": "Account menu → Settings → opencode-omo",
-      "expect": "The plugin page opens with the opencode-omo heading, its alignment intro, and the selected 角色设置 tab.",
+      "expect": "The plugin page opens with the opencode-omo heading, its alignment intro, the role-editing hint, and the selected 角色设置 tab.",
       "test": "specs/role-settings.spec.ts::role settings page lists the complete omo role catalog"
     },
     {
@@ -15,7 +15,7 @@
     {
       "id": "primary-model",
       "entry": "Role box → 主模型 menu",
-      "expect": "The menu offers 跟随当前, 使用 omo 默认, and the catalog models; the selection updates the role box and survives closing/reopening Settings.",
+      "expect": "The menu offers 跟随当前, 使用 omo 默认, and the catalog models; choosing an entry closes the menu, updates the role box, and survives closing/reopening Settings.",
       "test": "specs/role-settings.spec.ts::primary model selector offers follow, omo default, and a pinned model with reasoning effort"
     },
     {
@@ -27,19 +27,19 @@
     {
       "id": "fallback-add",
       "entry": "Role box → + (添加 <role> fallback 模型)",
-      "expect": "A model list opens below the role box with a search field; a picked model becomes a chip and the list stays open for repeated additions; picking the same model again shows 该模型已在 fallback 列表中.",
+      "expect": "A model list opens below the role box with a search field; a picked model becomes a chip and the list stays open for repeated additions in insertion order; picking the same model again shows 该模型已在 fallback 列表中.",
       "test": "specs/role-settings.spec.ts::fallback add panel appends chips, supports repeated additions, and rejects duplicates"
     },
     {
       "id": "fallback-search",
       "entry": "Fallback panel → 搜索模型…",
-      "expect": "Typing filters the offered models; a non-matching query shows 没有匹配的模型.",
+      "expect": "Typing filters the offered models case-insensitively; a non-matching query shows 没有匹配的模型, and clearing it restores the full list.",
       "test": "specs/role-settings.spec.ts::fallback model search filters the list and reports no matches"
     },
     {
       "id": "fallback-cancel",
       "entry": "Fallback panel → 取消, the + toggle, an outside click, or Escape",
-      "expect": "The panel closes without adding a fallback chip.",
+      "expect": "The panel closes and its + trigger reports aria-expanded=false, without adding a fallback chip.",
       "test": "specs/role-settings.spec.ts::fallback panel cancel, toggle, outside click, and Escape add nothing"
     },
     {
@@ -53,6 +53,18 @@
       "entry": "Add a fallback chip → close and reopen Settings",
       "expect": "The fallback chip is still shown under the role box after reopening the plugin page.",
       "test": "specs/role-settings.spec.ts::fallback chips persist across reopening and can be removed"
+    },
+    {
+      "id": "fallback-scope",
+      "entry": "Two different role boxes → + → pick models",
+      "expect": "Each role owns its fallback chain: additions stay on the chosen role in insertion order, and removing one chip leaves the remaining chips of every role intact.",
+      "test": "specs/fallback-scope.spec.ts::fallback chains stay scoped to their role, keep insertion order, and remove one chip at a time"
+    },
+    {
+      "id": "settings-persistence",
+      "entry": "Pin a primary model, choose its effort, add a fallback chip → reload the page → reopen Settings → opencode-omo",
+      "expect": "The pinned model, its reasoning effort, and the fallback chip are read back from the plugin's persisted settings entry after a full page reload.",
+      "test": "specs/persistence.spec.ts::role settings persist across a full page reload"
     }
   ]
 }

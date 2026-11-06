@@ -1,14 +1,25 @@
 import { expect, test } from '@playwright/test'
-import type { Locator, Page } from '@playwright/test'
+import type { Locator } from '@playwright/test'
 import {
   addFallbackButton,
   attachTripwire,
+  catalogModels,
+  chooseModel,
+  fallbackChipNames,
+  fallbackModelChoices,
   fallbackPanel,
+  fallbackPanelTitle,
+  FOLLOW_SESSION,
+  OMO_DEFAULT,
+  OMO_DEFAULT_LABEL,
   openHarness,
   openOmoSettings,
   primaryModelButton,
+  readModelMenu,
   removeAllFallbackChips,
   roleRow,
+  SETTINGS_HEADING,
+  SETTINGS_INTRO,
 } from './helpers'
 
 const ROLES = [
@@ -84,33 +95,6 @@ const ROLES = [
   },
 ] as const
 
-const FOLLOW_SESSION = '跟随当前'
-const OMO_DEFAULT = '使用 omo 默认'
-const OMO_DEFAULT_LABEL = /^omo 默认(?: · .+)?$/
-const SETTINGS_HEADING = 'opencode-omo'
-const SETTINGS_INTRO = 'opencode + omo 对齐设置：为每个 omo 角色配置主模型与 fallback 链。'
-
-/** Open a role's primary-model menu and read its entries. */
-async function readModelMenu(page: Page, primary: Locator): Promise<string[]> {
-  await primary.click()
-  const items = page.getByRole('menuitem')
-  await expect(items.first()).toBeVisible()
-  // Wait for the asynchronously loaded catalog, not only the two sentinels.
-  await expect.poll(async () => items.count()).toBeGreaterThan(2)
-  return (await items.allInnerTexts()).map(label => label.trim())
-}
-
-/** Open a role's primary-model menu and choose one entry. */
-async function chooseModel(page: Page, primary: Locator, label: string): Promise<void> {
-  await primary.click()
-  await page.getByRole('menuitem', { name: label, exact: true }).click()
-}
-
-/** The non-sentinel model labels offered by an open primary-model menu. */
-function catalogModels(menu: readonly string[]): string[] {
-  return menu.filter(label => label !== FOLLOW_SESSION && label !== OMO_DEFAULT)
-}
-
 test('role settings page lists the complete omo role catalog', async ({ page }) => {
   const errors = attachTripwire(page)
 
@@ -131,6 +115,7 @@ test('role settings page lists the complete omo role catalog', async ({ page }) 
     )).toBeVisible()
 
     await expect(dialog.getByRole('tablist', { name: 'opencode-omo 设置页', exact: true })).toBeVisible()
+    await expect(dialog.getByRole('tab')).toHaveCount(1)
     const tab = dialog.getByRole('tab', { name: '角色设置', exact: true })
     await expect(tab).toBeVisible()
     await expect(tab).toHaveAttribute('aria-selected', 'true')
@@ -188,9 +173,13 @@ test('primary model selector offers follow, omo default, and a pinned model with
     expect(menu).toContain(OMO_DEFAULT)
     const models = catalogModels(menu)
     expect(models.length).toBeGreaterThan(0)
+    // The catalog contributes each model once.
+    expect(new Set(models).size).toBe(models.length)
 
     await page.getByRole('menuitem', { name: models[0]!, exact: true }).click()
     await expect(primary).toHaveText(models[0]!)
+    // Choosing an entry closes the plugin's menu before the next state is read.
+    await expect(page.getByRole('menuitem')).toHaveCount(0)
 
     // A catalog model may carry adapter reasoning efforts. Find one that does.
     for (const model of models.slice(1)) {
@@ -258,15 +247,15 @@ test('fallback add panel appends chips, supports repeated additions, and rejects
     await expect(dialog.getByRole('button', { name: /^移除 / })).toHaveCount(0)
 
     const plus = addFallbackButton(dialog, 'Sisyphus - Ultraworker')
+    await expect(plus).toHaveAttribute('aria-expanded', 'false')
     await plus.click()
+    await expect(plus).toHaveAttribute('aria-expanded', 'true')
     const panel = fallbackPanel(dialog, 'Sisyphus - Ultraworker')
     await expect(panel).toBeVisible()
-    await expect(panel.getByText('选择 Sisyphus - Ultraworker 的 fallback 模型', { exact: true })).toBeVisible()
+    await expect(panel.getByText(fallbackPanelTitle('Sisyphus - Ultraworker'), { exact: true })).toBeVisible()
     await expect(panel.getByRole('textbox', { name: '搜索模型…', exact: true })).toBeVisible()
 
-    const offered = (await panel.getByRole('button').allInnerTexts())
-      .map(label => label.trim())
-      .filter(label => label !== '取消')
+    const offered = await fallbackModelChoices(panel)
     expect(offered.length).toBeGreaterThan(1)
     const [first, second] = offered
 
@@ -286,7 +275,10 @@ test('fallback add panel appends chips, supports repeated additions, and rejects
     await expect(secondButton).toBeEnabled()
     await secondButton.click()
     await expect(dialog.getByRole('button', { name: `移除 ${second}`, exact: true })).toBeVisible()
+    await expect(panel.getByText('该模型已在 fallback 列表中', { exact: true })).toHaveCount(0)
     await expect(dialog.getByRole('button', { name: /^移除 / })).toHaveCount(2)
+    // Repeated additions keep insertion order.
+    expect(await fallbackChipNames(dialog)).toEqual([first, second])
 
     await panel.getByRole('button', { name: '取消', exact: true }).click()
     await expect(panel).toHaveCount(0)
@@ -320,14 +312,17 @@ test('fallback model search filters the list and reports no matches', async ({ p
     const search = panel.getByRole('textbox', { name: '搜索模型…', exact: true })
     await expect(search).toBeVisible()
 
-    const offered = (await panel.getByRole('button').allInnerTexts())
-      .map(label => label.trim())
-      .filter(label => label !== '取消')
+    const offered = await fallbackModelChoices(panel)
     expect(offered.length).toBeGreaterThan(1)
     const [first, second] = offered
     expect(second).not.toBe(first)
 
     await search.fill(second!)
+    await expect(panel.getByRole('button', { name: second!, exact: true })).toBeVisible()
+    await expect(panel.getByRole('button', { name: first!, exact: true })).toHaveCount(0)
+
+    // The filter matches case-insensitively.
+    await search.fill(second!.toUpperCase())
     await expect(panel.getByRole('button', { name: second!, exact: true })).toBeVisible()
     await expect(panel.getByRole('button', { name: first!, exact: true })).toHaveCount(0)
 
@@ -367,14 +362,17 @@ test('fallback panel cancel, toggle, outside click, and Escape add nothing', asy
 
     await plus.click()
     await expect(panel).toBeVisible()
+    await expect(plus).toHaveAttribute('aria-expanded', 'true')
     await panel.getByRole('button', { name: '取消', exact: true }).click()
     await expect(panel).toHaveCount(0)
+    await expect(plus).toHaveAttribute('aria-expanded', 'false')
     await expect(chips).toHaveCount(0)
 
     await plus.click()
     await expect(panel).toBeVisible()
     await plus.click()
     await expect(panel).toHaveCount(0)
+    await expect(plus).toHaveAttribute('aria-expanded', 'false')
     await expect(chips).toHaveCount(0)
 
     await plus.click()
