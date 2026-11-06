@@ -1,0 +1,267 @@
+{
+  "schema": 1,
+  "runId": "42168339146-1",
+  "runUrl": "https://github.com/royenheart/dsh-plugin-opencode-omo/actions/runs/42168339146",
+  "migrationId": "0.2.2-rc.1",
+  "actionVersion": "1.0.0-rc.4",
+  "workflow": {
+    "id": "migrate",
+    "hash": "21ffb1be2cab525d4d5432ef1055490ea5a808a0e22f58f7ff2ddad5903bc33d",
+    "adapter": "local",
+    "graph": "stateDiagram-v2\n  [*] --> start\n  start --> sourceBoot\n  start --> targetBoot\n  start --> characterizing\n  start --> afterBaseline\n  sourceBoot --> targetBoot\n  targetBoot --> characterizing\n  targetBoot --> afterBaseline\n  characterizing --> afterBaseline\n  afterBaseline --> checking\n  afterBaseline --> reviewing\n  reviewing --> failed\n  reviewing --> checking\n  checking --> checksPassed\n  checking --> evaluating\n  checksPassed --> concluding\n  evaluating --> concluding\n  evaluating --> reviewing\n  evaluating --> repairing\n  evaluating --> failed\n  repairing --> failed\n  repairing --> checking\n  concluding --> publishing\n  concluding --> concluded\n  publishing --> concluded\n  concluded --> publishingE2E\n  concluded --> settled\n  publishingE2E --> reporting\n  publishingE2E --> rejected\n  publishingE2E --> superseded\n  publishingE2E --> settled\n  settled --> awaitingMerge\n  settled --> unpublished\n  settled --> compatible\n  awaitingMerge --> reporting\n  awaitingMerge --> rejected\n  awaitingMerge --> superseded\n  accepted --> reporting\n  reporting --> rejected\n  reporting --> superseded\n  reporting --> accepted\n  reporting --> awaitingMerge\n  compatible --> [*]\n  unpublished --> [*]\n  failed --> [*]\n  error --> [*]\n  rejected --> [*]\n  superseded --> [*]",
+    "nodes": [
+      "start",
+      "sourceBoot",
+      "targetBoot",
+      "characterizing",
+      "afterBaseline",
+      "reviewing",
+      "checking",
+      "checksPassed",
+      "evaluating",
+      "repairing",
+      "concluding",
+      "publishing",
+      "concluded",
+      "publishingE2E",
+      "settled",
+      "awaitingMerge",
+      "accepted",
+      "reporting",
+      "compatible",
+      "unpublished",
+      "failed",
+      "error",
+      "rejected",
+      "superseded"
+    ],
+    "edges": [
+      "[*] --> start",
+      "start --> sourceBoot",
+      "start --> targetBoot",
+      "start --> characterizing",
+      "start --> afterBaseline",
+      "sourceBoot --> targetBoot",
+      "targetBoot --> characterizing",
+      "targetBoot --> afterBaseline",
+      "characterizing --> afterBaseline",
+      "afterBaseline --> checking",
+      "afterBaseline --> reviewing",
+      "reviewing --> failed",
+      "reviewing --> checking",
+      "checking --> checksPassed",
+      "checking --> evaluating",
+      "checksPassed --> concluding",
+      "evaluating --> concluding",
+      "evaluating --> reviewing",
+      "evaluating --> repairing",
+      "evaluating --> failed",
+      "repairing --> failed",
+      "repairing --> checking",
+      "concluding --> publishing",
+      "concluding --> concluded",
+      "publishing --> concluded",
+      "concluded --> publishingE2E",
+      "concluded --> settled",
+      "publishingE2E --> reporting",
+      "publishingE2E --> rejected",
+      "publishingE2E --> superseded",
+      "publishingE2E --> settled",
+      "settled --> awaitingMerge",
+      "settled --> unpublished",
+      "settled --> compatible",
+      "awaitingMerge --> reporting",
+      "awaitingMerge --> rejected",
+      "awaitingMerge --> superseded",
+      "accepted --> reporting",
+      "reporting --> rejected",
+      "reporting --> superseded",
+      "reporting --> accepted",
+      "reporting --> awaitingMerge",
+      "compatible --> [*]",
+      "unpublished --> [*]",
+      "failed --> [*]",
+      "error --> [*]",
+      "rejected --> [*]",
+      "superseded --> [*]"
+    ],
+    "state": "awaitingMerge"
+  },
+  "plugin": [
+    "@royenheart/dsh-plugin-opencode-omo"
+  ],
+  "source": {
+    "tag": "dsh-v0.2.1-rc.2",
+    "version": "0.2.1-rc.2"
+  },
+  "target": {
+    "tag": "dsh-v0.2.2-rc.1",
+    "version": "0.2.2-rc.1"
+  },
+  "agent": {
+    "runtime": "0.2.0-rc.2",
+    "skill": "ef075767b476e8000c716a18f848028eebcd5aef",
+    "model": {
+      "provider": "deepseek-official",
+      "model": "deepseek-v4-flash",
+      "thinking": "enabled",
+      "reasoningEffort": "max"
+    }
+  },
+  "prompts": {
+    "overlap": {
+      "sha256": "4395a8671ab5eec4561d0d2315b9d30d920f8f8dd08cd882f42c7ed3c541cb1d",
+      "path": "prompts/4395a8671ab5eec4561d0d2315b9d30d920f8f8dd08cd882f42c7ed3c541cb1d.md"
+    },
+    "extension-points": {
+      "sha256": "df34a875b4cd42ad9c56bbfacc67d63e98fddb18bbf7b33b7ea597bc5ea25c89",
+      "path": "prompts/df34a875b4cd42ad9c56bbfacc67d63e98fddb18bbf7b33b7ea597bc5ea25c89.md"
+    },
+    "repair-1": {
+      "sha256": "38003faca4e0ba333e363f092474f25708bc05ef51cdc342e45bb74be0ecbbbd",
+      "path": "prompts/38003faca4e0ba333e363f092474f25708bc05ef51cdc342e45bb74be0ecbbbd.md"
+    },
+    "e2e-publish": {
+      "sha256": "96090560525539b318ee458283e58ca29fded227601bf4929f6f1c1177e81944",
+      "path": "prompts/96090560525539b318ee458283e58ca29fded227601bf4929f6f1c1177e81944.md"
+    }
+  },
+  "sessions": [
+    {
+      "kind": "overlap",
+      "name": "overlap",
+      "promptSha256": "4395a8671ab5eec4561d0d2315b9d30d920f8f8dd08cd882f42c7ed3c541cb1d",
+      "promptPath": "prompts/4395a8671ab5eec4561d0d2315b9d30d920f8f8dd08cd882f42c7ed3c541cb1d.md",
+      "startedAt": "2026-11-06T05:28:43.876Z",
+      "endedAt": "2026-11-06T05:40:19.176Z",
+      "outcome": "completed",
+      "usage": {
+        "inputTokens": 207468,
+        "outputTokens": 75993,
+        "cacheHitTokens": 31557120,
+        "usd": 0.17138736
+      },
+      "progress": {
+        "turns": 1,
+        "steps": 170,
+        "elapsedSeconds": 694
+      },
+      "toolCalls": 201
+    },
+    {
+      "kind": "extension-points",
+      "name": "extension-points",
+      "promptSha256": "df34a875b4cd42ad9c56bbfacc67d63e98fddb18bbf7b33b7ea597bc5ea25c89",
+      "promptPath": "prompts/df34a875b4cd42ad9c56bbfacc67d63e98fddb18bbf7b33b7ea597bc5ea25c89.md",
+      "startedAt": "2026-11-06T05:40:19.555Z",
+      "endedAt": "2026-11-06T05:55:29.450Z",
+      "outcome": "completed",
+      "usage": {
+        "inputTokens": 256416,
+        "outputTokens": 97381,
+        "cacheHitTokens": 33086208,
+        "usd": 0.19614962400000013
+      },
+      "progress": {
+        "turns": 1,
+        "steps": 134,
+        "elapsedSeconds": 909
+      },
+      "toolCalls": 155
+    },
+    {
+      "kind": "repair",
+      "name": "repair-1",
+      "promptSha256": "38003faca4e0ba333e363f092474f25708bc05ef51cdc342e45bb74be0ecbbbd",
+      "promptPath": "prompts/38003faca4e0ba333e363f092474f25708bc05ef51cdc342e45bb74be0ecbbbd.md",
+      "startedAt": "2026-11-06T05:55:35.887Z",
+      "endedAt": "2026-11-06T06:00:18.294Z",
+      "outcome": "completed",
+      "usage": {
+        "inputTokens": 102432,
+        "outputTokens": 32513,
+        "cacheHitTokens": 4892032,
+        "usd": 0.052642692
+      },
+      "progress": {
+        "turns": 1,
+        "steps": 58,
+        "elapsedSeconds": 281
+      },
+      "toolCalls": 91
+    },
+    {
+      "kind": "e2e-authoring",
+      "name": "e2e-publish",
+      "promptSha256": "96090560525539b318ee458283e58ca29fded227601bf4929f6f1c1177e81944",
+      "promptPath": "prompts/96090560525539b318ee458283e58ca29fded227601bf4929f6f1c1177e81944.md",
+      "startedAt": "2026-11-06T06:01:11.818Z",
+      "endedAt": "2026-11-06T06:25:16.934Z",
+      "outcome": "completed",
+      "usage": {
+        "inputTokens": 121185,
+        "outputTokens": 90302,
+        "cacheHitTokens": 13972736,
+        "usd": 0.22855431599999984
+      },
+      "progress": {
+        "turns": 1,
+        "steps": 114,
+        "elapsedSeconds": 1444
+      },
+      "toolCalls": 139
+    }
+  ],
+  "checks": [
+    {
+      "check": "boot",
+      "outcome": "skipped"
+    },
+    {
+      "check": "boot",
+      "outcome": "skipped"
+    },
+    {
+      "check": "cards",
+      "outcome": "skipped"
+    },
+    {
+      "check": "mechanical",
+      "outcome": "fail"
+    },
+    {
+      "check": "cards",
+      "outcome": "skipped"
+    },
+    {
+      "check": "mechanical",
+      "outcome": "pass"
+    },
+    {
+      "check": "boot",
+      "outcome": "skipped"
+    },
+    {
+      "check": "web",
+      "outcome": "pass"
+    },
+    {
+      "check": "e2e",
+      "outcome": "pass"
+    }
+  ],
+  "totals": {
+    "sessions": 4,
+    "turns": 4,
+    "steps": 476,
+    "toolCalls": 586,
+    "elapsedSeconds": 3328,
+    "inputTokens": 687501,
+    "outputTokens": 296189,
+    "cacheHitTokens": 83508096,
+    "usd": 0.6487339919999999
+  },
+  "outcome": "awaitingMerge",
+  "startedAt": "2026-11-06T05:26:02.863Z",
+  "endedAt": "2026-11-06T06:25:19.675Z"
+}
