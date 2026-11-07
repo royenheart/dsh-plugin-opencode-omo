@@ -30,3 +30,9 @@ test('embedded plugin list matches presets/opencode-omo/agent.cordis.yml', () =>
   const composition = read('presets/opencode-omo/agent.cordis.yml').replace(/\s+$/, '')
   assert.equal(embedded.join('\n').replace(/\s+$/, ''), composition)
 })
+
+test('the preset no longer mounts the removed list-agents subpath', () => {
+  for (const file of ['presets/opencode-omo/agent.cordis.yml', 'cordis.patch.yml']) {
+    assert.doesNotMatch(read(file), /dsh-tool-subagent-control\/list-agents/, `${file} still references the removed subpath`)
+  }
+})
