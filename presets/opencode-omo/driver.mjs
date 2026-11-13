@@ -8,8 +8,8 @@
 //   assembly instead of being built by an overridden loop method.
 // - per-agent conditional tool registrations apply opencode's per-model tool
 //   gating (apply_patch vs edit/write) to step admission.
-// - `agent/inbox/claimed` detects omo ultrawork keywords and records the role
-//   model/effort before the loop snapshots the step selection.
+// - `agent/inbox/claimed` records the role model/effort before the loop
+//   snapshots the step selection.
 // - `agent/request` only adjusts sampling controls; provider, model and
 //   reasoning effort are frozen by step preparation on dsh 0.2.2.
 // - Named specialist / task() children pin an omo role and keep this complete
@@ -733,14 +733,6 @@ function omoEnvBlock(session, provider, model) {
 // already suppressRuntimeContext() so those facts must not re-enter as
 // omo system-prompt prose.
 
-/** Flatten one inbox message's text for ultrawork detection. */
-function messageText(message) {
-  return (message.content ?? [])
-    .filter(block => block?.type === 'text')
-    .map(block => block.text ?? '')
-    .join('\n')
-}
-
 /** Infer the current turn/step from the durable log (0 when no step has started yet). */
 function currentPosition(session) {
   let turn = 0
@@ -829,7 +821,7 @@ export function systemPromptFor(ctx, omoRoles, state, agent, assembleContext) {
   // when no selection is available yet.
   const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
   const position = nextPosition(agent.session)
-  const route = roleRoute(omoRoles, state, agent.session, position.turn, position.step)
+  const route = roleRoute(omoRoles, state, agent.session, position.turn)
   const provider = current?.provider ?? route?.provider ?? agent.options.provider ?? ''
   const model = current?.model ?? route?.model ?? agent.options.model ?? ''
   return renderOmoPrompt(
@@ -886,16 +878,12 @@ function sessionHasHistory(session) {
   return events.some(event => event.type === 'turn/start' || event.type === 'assistant/message')
 }
 
-/** State per live agent: fallback chain position, ultrawork turn, and the prompt/request-consistent route per turn:step. */
+/** State per live agent: the prompt/request-consistent route per turn:step. */
 function newState() {
   return {
     resolvedRoutes: new Map(),
     assembledRoutes: new Map(),
-    restoreSelection: undefined,
-    restoreTurn: undefined,
-    appliedSelection: undefined,
     lastRouteTurn: 0,
-    ultraworkTurn: 0,
   }
 }
 
@@ -926,10 +914,6 @@ function maxStepsFor(omoRoles, session) {
     : Infinity
 }
 
-function ultraworkRouteFor(omoRoles, state, session, turn) {
-  if (state.ultraworkTurn !== turn) return undefined
-  return roleConfigFor(omoRoles, session)?.ultrawork
-}
 
 /** User-pinned role model, or the omo-default primary resolved from the live catalog. */
 function primaryModelFor(omoRoles, session) {
@@ -941,33 +925,16 @@ function primaryModelFor(omoRoles, session) {
   return undefined
 }
 
-function roleRoute(omoRoles, state, session, turn, step) {
+function roleRoute(omoRoles, state, session, turn) {
   if (turn !== state.lastRouteTurn) {
-    // A fresh turn never inherits an older step's resolved route or an older
-    // turn's ultrawork override.
     state.resolvedRoutes.clear()
     state.assembledRoutes.clear()
-    if (state.ultraworkTurn !== turn) state.ultraworkTurn = 0
     state.lastRouteTurn = turn
   }
   if (omoRoles === undefined) return undefined
-  const ultrawork = ultraworkRouteFor(omoRoles, state, session, turn)
-  if (ultrawork?.model !== undefined) return ultrawork.model
   return primaryModelFor(omoRoles, session)
 }
 
-/**
- * Resolve the route the request will actually use for one turn:step.
- * A role primary/ultrawork target wins; otherwise the assembly's
- * `provider`/`model` variables (the session's live model selection, set by
- * dsh's model-selection listener) or the agent's declared options are used.
- */
-function finalRouteFor(omoRoles, state, session, turn, step, variables, agent) {
-  const target = roleRoute(omoRoles, state, session, turn, step)
-  const provider = target?.provider ?? variables?.provider ?? agent.options?.provider ?? ''
-  const model = target?.model ?? variables?.model ?? agent.options?.model ?? ''
-  return { provider, model, target }
-}
 
 
 /**
@@ -976,78 +943,25 @@ function finalRouteFor(omoRoles, state, session, turn, step, variables, agent) {
  * so the role model and effort must be recorded here; `agent/request` is too
  * late to change them on 0.2.2.
  */
-function sameSelection(left, right) {
-  return left?.provider === right?.provider
-    && left?.model === right?.model
-    && left?.reasoningEffort === right?.reasoningEffort
-}
-
-/** Restore the pre-ultra selection once the turn no longer has a claimed step. */
-export function restoreOnTurnEnd(state, agent, turn) {
-  if (state.restoreSelection === undefined || state.restoreTurn !== turn) return
+export function selectRoleRoute(omoRoles, state, session, agent) {
   const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
-  if (state.appliedSelection !== undefined && current !== undefined && !sameSelection(current, state.appliedSelection)) {
-    // The user chose another model while the turn ran; keep that choice.
-  } else if (typeof agent.model?.select === 'function') {
-    agent.model.select(state.restoreSelection)
-  }
-  state.restoreSelection = undefined
-  state.restoreTurn = undefined
-  state.appliedSelection = undefined
-}
-
-export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
-  let current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
-  let fallback = current ?? { provider: agent.options?.provider, model: agent.options?.model }
+  const fallback = current ?? { provider: agent.options?.provider, model: agent.options?.model }
   const roleTarget = primaryModelFor(omoRoles, session)
-  const ultra = ultraworkRouteFor(omoRoles, state, session, turn)
   const role = currentRole(omoRoles, session)
   let selection
-  let target = roleTarget
-
-  if (ultra !== undefined) {
-    // Keep the pre-ultra selection for the whole turn. A later step in the
-    // same turn has no inbox claim, so restoring here would end the override
-    // early; turn-stopping performs the single restore.
-    if (state.restoreTurn !== turn || state.restoreSelection === undefined) {
-      state.restoreSelection = current ?? fallback
-      state.restoreTurn = turn
-    }
-    const base = state.restoreSelection ?? current ?? fallback
-    const targetModel = ultra.model ?? roleTarget
-    const provider = targetModel?.provider ?? base.provider ?? agent.options?.provider ?? ''
-    const model = targetModel?.model ?? base.model ?? agent.options?.model ?? ''
-    const sampling = defaultRoleSampling(role, model)
-    const effort = ultra.model?.reasoningEffort ?? ultra.reasoningEffort
-      ?? targetModel?.reasoningEffort ?? current?.reasoningEffort ?? sampling.reasoningEffort
-    selection = { provider, model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
-    state.appliedSelection = selection
-    target = targetModel
+  if (roleTarget !== undefined) {
+    const sampling = defaultRoleSampling(role, roleTarget.model)
+    const effort = roleTarget.reasoningEffort ?? sampling.reasoningEffort
+    selection = { provider: roleTarget.provider, model: roleTarget.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
   } else {
-    // A pending restore from an interrupted turn is handled here before the
-    // ordinary selection, so a failed agent/request cannot leave it resident.
-    if (state.restoreSelection !== undefined && state.restoreTurn !== turn) {
-      restoreOnTurnEnd(state, agent, state.restoreTurn)
-      current = typeof agent.model?.current === 'function' ? agent.model.current() : current
-      fallback = current ?? fallback
-    }
-    state.appliedSelection = undefined
-    if (roleTarget !== undefined) {
-      const sampling = defaultRoleSampling(role, roleTarget.model)
-      const effort = roleTarget.reasoningEffort ?? sampling.reasoningEffort
-      selection = { provider: roleTarget.provider, model: roleTarget.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
-    } else {
-      const sampling = defaultRoleSampling(role, fallback.model)
-      const effort = current?.reasoningEffort ?? sampling.reasoningEffort
-      selection = { provider: fallback.provider, model: fallback.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
-      target = undefined
-    }
+    const sampling = defaultRoleSampling(role, fallback.model)
+    const effort = current?.reasoningEffort ?? sampling.reasoningEffort
+    selection = { provider: fallback.provider, model: fallback.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
   }
-
   if (selection.provider !== '' && selection.model !== '' && typeof agent.model?.select === 'function') {
     agent.model.select(selection)
   }
-  return { provider: selection.provider, model: selection.model, target }
+  return { provider: selection.provider, model: selection.model, target: roleTarget }
 }
 
 /** omo reference agent-config sampling defaults applied by the loop shim. */
@@ -1200,19 +1114,12 @@ export function apply(ctx) {
     return downstream
   })
 
-  // omo ultrawork keyword detection. inbox/claimed fires inside preStep
-  // BEFORE the system-prompt assembly, so the env block and route see the
-  // override for this exact step (the same ordering the old subclass had).
-  ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
+  ctx.on('agent/inbox/claimed', ({ agent, turn }) => {
     const state = stateFor(agent)
-    const clean = messageText(message).replace(/```[\s\S]*?```/g, '').replace(/`[^`]+`/g, '')
-    if (/\b(ultrawork|ulw)\b/i.test(clean)) {
-      state.ultraworkTurn = turn
-    }
     // The loop snapshots agent.model.current() after this emit. Record the
     // role route here; this is the last seam where the step selection can move.
     const position = nextPosition(agent.session)
-    const route = selectRoleRoute(omoRoles, state, agent.session, agent, turn, position.step)
+    const route = selectRoleRoute(omoRoles, state, agent.session, agent)
     state.resolvedRoutes.set(`${turn}:${position.step}`, route)
   })
 
@@ -1230,12 +1137,6 @@ export function apply(ctx) {
       ...(sampling.temperature !== undefined ? { temperature: sampling.temperature } : {}),
     }
   }, { prepend: true })
-
-  // A turn-level ultrawork override ends here, after every step of the turn
-  // has used the temporary selection. A user choice made during the turn wins.
-  ctx.on('agent/turn-stopping', ({ agent, turn }) => {
-    restoreOnTurnEnd(stateFor(agent), agent, turn)
-  })
 
   ctx.on('agent/disposed', ({ agent }) => {
     states.delete(agent.session.id)
