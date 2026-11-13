@@ -891,7 +891,9 @@ function newState() {
   return {
     resolvedRoutes: new Map(),
     assembledRoutes: new Map(),
-    lastEffort: undefined,
+    baseSelection: undefined,
+    lastAppliedSelection: undefined,
+    ultraActive: false,
     lastRouteTurn: 0,
     ultraworkTurn: 0,
   }
@@ -974,30 +976,58 @@ function finalRouteFor(omoRoles, state, session, turn, step, variables, agent) {
  * late to change them on 0.2.2.
  */
 export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
-  const current = typeof agent.model?.current === 'function'
-    ? agent.model.current()
-    : undefined
-  const variables = current ?? { provider: agent.options?.provider, model: agent.options?.model }
-  const route = finalRouteFor(omoRoles, state, session, turn, step, variables, agent)
-  const target = route.target
+  const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
+  const fallback = current ?? { provider: agent.options?.provider, model: agent.options?.model }
+  const roleTarget = primaryModelFor(omoRoles, session)
   const ultra = ultraworkRouteFor(omoRoles, state, session, turn)
-  const sampling = defaultRoleSampling(currentRole(omoRoles, session), route.model)
-  const inherited = current?.reasoningEffort !== undefined && state.lastEffort?.value === current.reasoningEffort
-    && state.lastEffort.source !== 'user'
-    ? undefined
-    : current?.reasoningEffort
-  const effort = ultra?.reasoningEffort ?? (target === undefined ? inherited : undefined) ?? target?.reasoningEffort ?? sampling.reasoningEffort
-  const source = ultra?.reasoningEffort !== undefined ? 'ultra' : target !== undefined ? 'role' : inherited !== undefined ? 'user' : 'sampling'
-  if (effort !== undefined) state.lastEffort = { value: effort, source }
-  const selection = {
-    provider: route.provider,
-    model: route.model,
-    ...(effort === undefined ? {} : { reasoningEffort: effort }),
+  const sampling = defaultRoleSampling(currentRole(omoRoles, session), roleTarget?.model ?? ultra?.model?.model ?? fallback.model)
+  let selection
+  let target = roleTarget
+
+  if (roleTarget === undefined) {
+    // Follow-current role: keep the pre-override user selection so an
+    // ultrawork turn can be undone on the next ordinary step.
+    if (ultra !== undefined) {
+      if (!state.ultraActive) {
+        state.baseSelection = current ?? fallback
+        state.ultraActive = true
+      }
+      const base = state.baseSelection ?? fallback
+      const modelTarget = ultra.model
+      const provider = modelTarget?.provider ?? base.provider ?? agent.options?.provider ?? ''
+      const model = modelTarget?.model ?? base.model ?? agent.options?.model ?? ''
+      const effort = ultra.reasoningEffort ?? base.reasoningEffort ?? sampling.reasoningEffort
+      selection = { provider, model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+    } else {
+      if (state.ultraActive) {
+        state.ultraActive = false
+      } else if (current !== undefined && (state.lastAppliedSelection === undefined
+        || current.provider !== state.lastAppliedSelection.provider
+        || current.model !== state.lastAppliedSelection.model
+        || current.reasoningEffort !== state.lastAppliedSelection.reasoningEffort)) {
+        // A user/model-picker change replaces the saved follow-current base.
+        state.baseSelection = current
+      } else if (state.baseSelection === undefined) {
+        state.baseSelection = current ?? fallback
+      }
+      const base = state.baseSelection ?? current ?? fallback
+      const effort = base.reasoningEffort ?? sampling.reasoningEffort
+      selection = { provider: base.provider, model: base.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+    }
+    target = undefined
+  } else {
+    // Fixed role model: role settings are authoritative; ultrawork may add
+    // effort but the next ordinary turn returns to the role selection.
+    state.ultraActive = false
+    const effort = ultra?.reasoningEffort ?? roleTarget.reasoningEffort ?? sampling.reasoningEffort
+    selection = { provider: roleTarget.provider, model: roleTarget.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
   }
-  if ((target !== undefined || effort !== undefined) && selection.provider !== '' && selection.model !== '' && typeof agent.model?.select === 'function') {
+
+  if (selection.provider !== '' && selection.model !== '' && typeof agent.model?.select === 'function') {
     agent.model.select(selection)
   }
-  return route
+  state.lastAppliedSelection = selection
+  return { provider: selection.provider, model: selection.model, target }
 }
 
 /** omo reference agent-config sampling defaults applied by the loop shim. */

@@ -99,3 +99,45 @@ test('tool admission prefers the step model selection over live role settings', 
   const ctx = { get: () => ({ configFor: () => ({ model: { provider: 'role-provider', model: 'role-model' } }) }) }
   assert.equal(currentToolModel(ctx, agent, { provider: 'frozen-provider', model: 'frozen-model' }), 'frozen-model')
 })
+
+test('follow-current restores the pre-ultra model on the next ordinary turn', () => {
+  let current = { provider: 'claude-provider', model: 'claude-opus' }
+  const agent = {
+    session: { id: 'session-restore-model', snapshotEvents: () => [] },
+    options: current,
+    model: { current: () => current, select: value => { current = value } },
+  }
+  const s = state()
+  const omoRoles = {
+    roleFor: () => 'atlas',
+    configFor: () => ({ ultrawork: { model: { provider: 'gpt-provider', model: 'gpt-5.5' }, reasoningEffort: 'high' } }),
+    fallbackModelsFor: () => [],
+  }
+  s.ultraworkTurn = 1
+  selectRoleRoute(omoRoles, s, agent.session, agent, 1, 1)
+  assert.deepEqual(current, { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
+  s.ultraworkTurn = 0
+  selectRoleRoute(omoRoles, s, agent.session, agent, 2, 1)
+  assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus' })
+})
+
+test('follow-current restores the explicit user effort after ultrawork', () => {
+  let current = { provider: 'claude-provider', model: 'claude-opus', reasoningEffort: 'high' }
+  const agent = {
+    session: { id: 'session-restore-effort', snapshotEvents: () => [] },
+    options: current,
+    model: { current: () => current, select: value => { current = value } },
+  }
+  const s = state()
+  const omoRoles = {
+    roleFor: () => 'atlas',
+    configFor: () => ({ ultrawork: { reasoningEffort: 'xhigh' } }),
+    fallbackModelsFor: () => [],
+  }
+  s.ultraworkTurn = 1
+  selectRoleRoute(omoRoles, s, agent.session, agent, 1, 1)
+  assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus', reasoningEffort: 'xhigh' })
+  s.ultraworkTurn = 0
+  selectRoleRoute(omoRoles, s, agent.session, agent, 2, 1)
+  assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus', reasoningEffort: 'high' })
+})
