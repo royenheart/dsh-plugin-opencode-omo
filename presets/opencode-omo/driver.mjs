@@ -975,52 +975,91 @@ function finalRouteFor(omoRoles, state, session, turn, step, variables, agent) {
  * so the role model and effort must be recorded here; `agent/request` is too
  * late to change them on 0.2.2.
  */
+function sameSelection(left, right) {
+  return left?.provider === right?.provider
+    && left?.model === right?.model
+    && left?.reasoningEffort === right?.reasoningEffort
+}
+
+function messageTextOf(event) {
+  return (event?.data?.content ?? [])
+    .filter(block => block?.type === 'text')
+    .map(block => block.text ?? '')
+    .join('\n')
+}
+
+/**
+ * Recover the pre-ultra base selection after an Agent reload. The durable
+ * session log keeps `model/selection` events; when the latest one is preceded
+ * by an ultrawork user message, the selection before it is the user's base.
+ */
+function recoverBaseSelection(session) {
+  const events = typeof session?.snapshotEvents === 'function' ? session.snapshotEvents() : []
+  let latest = -1
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]?.type === 'model/selection') { latest = index; break }
+  }
+  if (latest <= 0) return undefined
+  let previous
+  for (let index = latest - 1; index >= 0; index -= 1) {
+    if (events[index]?.type === 'model/selection') { previous = events[index].data; break }
+  }
+  let user
+  for (let index = latest - 1; index >= 0; index -= 1) {
+    if (events[index]?.type === 'user/message') { user = events[index]; break }
+  }
+  if (previous === undefined || user === undefined || !/\b(ultrawork|ulw)\b/i.test(messageTextOf(user))) return undefined
+  return previous
+}
+
 export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
   const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
   const fallback = current ?? { provider: agent.options?.provider, model: agent.options?.model }
   const roleTarget = primaryModelFor(omoRoles, session)
   const ultra = ultraworkRouteFor(omoRoles, state, session, turn)
-  const sampling = defaultRoleSampling(currentRole(omoRoles, session), roleTarget?.model ?? ultra?.model?.model ?? fallback.model)
+  const role = currentRole(omoRoles, session)
   let selection
   let target = roleTarget
 
   if (roleTarget === undefined) {
-    // Follow-current role: keep the pre-override user selection so an
-    // ultrawork turn can be undone on the next ordinary step.
     if (ultra !== undefined) {
-      if (!state.ultraActive) {
+      const userChanged = state.ultraActive && current !== undefined && state.lastAppliedSelection !== undefined
+        && !sameSelection(current, state.lastAppliedSelection)
+      if (!state.ultraActive || userChanged) {
         state.baseSelection = current ?? fallback
         state.ultraActive = true
       }
-      const base = state.baseSelection ?? fallback
+      const base = state.baseSelection ?? current ?? fallback
       const modelTarget = ultra.model
       const provider = modelTarget?.provider ?? base.provider ?? agent.options?.provider ?? ''
       const model = modelTarget?.model ?? base.model ?? agent.options?.model ?? ''
-      const effort = ultra.reasoningEffort ?? base.reasoningEffort ?? sampling.reasoningEffort
+      const sampling = defaultRoleSampling(role, model)
+      const effort = modelTarget?.reasoningEffort ?? ultra.reasoningEffort ?? base.reasoningEffort ?? sampling.reasoningEffort
       selection = { provider, model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
     } else {
       if (state.ultraActive) {
+        const userChanged = current !== undefined && state.lastAppliedSelection !== undefined
+          && !sameSelection(current, state.lastAppliedSelection)
+        if (userChanged) state.baseSelection = current
         state.ultraActive = false
-      } else if (current !== undefined && (state.lastAppliedSelection === undefined
-        || current.provider !== state.lastAppliedSelection.provider
-        || current.model !== state.lastAppliedSelection.model
-        || current.reasoningEffort !== state.lastAppliedSelection.reasoningEffort)) {
-        // A user/model-picker change replaces the saved follow-current base.
+      } else if (current !== undefined && state.lastAppliedSelection !== undefined
+        && !sameSelection(current, state.lastAppliedSelection)) {
         state.baseSelection = current
-      } else if (state.baseSelection === undefined) {
-        state.baseSelection = current ?? fallback
       }
-      const base = state.baseSelection ?? current ?? fallback
+      const base = state.baseSelection ?? recoverBaseSelection(session) ?? current ?? fallback
+      state.baseSelection = base
+      const sampling = defaultRoleSampling(role, base.model)
       const effort = base.reasoningEffort ?? sampling.reasoningEffort
       selection = { provider: base.provider, model: base.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
     }
     target = undefined
   } else {
-    // Fixed role model: role settings are authoritative; ultrawork may add
-    // effort but the next ordinary turn returns to the role selection.
     state.ultraActive = false
-    const effort = ultra?.reasoningEffort ?? roleTarget.reasoningEffort ?? sampling.reasoningEffort
-    selection = { provider: roleTarget.provider, model: roleTarget.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+    state.baseSelection = undefined
+    const targetModel = ultra?.model ?? roleTarget
+    const sampling = defaultRoleSampling(role, targetModel.model)
+    const effort = ultra?.model?.reasoningEffort ?? ultra?.reasoningEffort ?? targetModel.reasoningEffort ?? sampling.reasoningEffort
+    selection = { provider: targetModel.provider, model: targetModel.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
   }
 
   if (selection.provider !== '' && selection.model !== '' && typeof agent.model?.select === 'function') {

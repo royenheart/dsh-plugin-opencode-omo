@@ -141,3 +141,97 @@ test('follow-current restores the explicit user effort after ultrawork', () => {
   selectRoleRoute(omoRoles, s, agent.session, agent, 2, 1)
   assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus', reasoningEffort: 'high' })
 })
+
+test('an ultrawork model overrides a fixed role primary', () => {
+  let selected
+  const agent = {
+    session: { id: 'session-fixed-ultra', snapshotEvents: () => [] },
+    options: { provider: 'role-provider', model: 'claude-opus' },
+    model: { current: () => ({ provider: 'role-provider', model: 'claude-opus' }), select: value => { selected = value } },
+  }
+  const omoRoles = {
+    roleFor: () => 'sisyphus',
+    configFor: () => ({
+      model: { provider: 'role-provider', model: 'claude-opus' },
+      ultrawork: { model: { provider: 'ultra-provider', model: 'gpt-5.5', reasoningEffort: 'high' } },
+      fallbackModels: [],
+    }),
+    fallbackModelsFor: () => [],
+  }
+  const s = { ...state(), ultraworkTurn: 1 }
+  selectRoleRoute(omoRoles, s, agent.session, agent, 1, 1)
+  assert.deepEqual(selected, { provider: 'ultra-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
+})
+
+test('restoring a follow-current selection does not inherit the ultra model default', () => {
+  let current = { provider: 'claude-provider', model: 'claude-opus' }
+  const agent = {
+    session: { id: 'session-restore-default', snapshotEvents: () => [] },
+    options: current,
+    model: { current: () => current, select: value => { current = value } },
+  }
+  const s = state()
+  const omoRoles = {
+    roleFor: () => 'sisyphus',
+    configFor: () => ({ ultrawork: { model: { provider: 'gpt-provider', model: 'gpt-5.5' } } }),
+    fallbackModelsFor: () => [],
+  }
+  s.ultraworkTurn = 1
+  selectRoleRoute(omoRoles, s, agent.session, agent, 1, 1)
+  s.ultraworkTurn = 0
+  selectRoleRoute(omoRoles, s, agent.session, agent, 2, 1)
+  assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus' })
+})
+
+test('a user selection made after ultrawork wins over the saved base', () => {
+  let current = { provider: 'claude-provider', model: 'claude-opus', reasoningEffort: 'low' }
+  const agent = {
+    session: { id: 'session-user-after-ultra', snapshotEvents: () => [] },
+    options: current,
+    model: { current: () => current, select: value => { current = value } },
+  }
+  const s = state()
+  const omoRoles = {
+    roleFor: () => 'atlas',
+    configFor: () => ({ ultrawork: { model: { provider: 'gpt-provider', model: 'gpt-5.5' }, reasoningEffort: 'high' } }),
+    fallbackModelsFor: () => [],
+  }
+  s.ultraworkTurn = 1
+  selectRoleRoute(omoRoles, s, agent.session, agent, 1, 1)
+  current = { provider: 'new-provider', model: 'new-model', reasoningEffort: 'low' }
+  s.ultraworkTurn = 0
+  selectRoleRoute(omoRoles, s, agent.session, agent, 2, 1)
+  assert.deepEqual(current, { provider: 'new-provider', model: 'new-model', reasoningEffort: 'low' })
+})
+
+test('cold recovery restores the model before an ultrawork selection from the session log', () => {
+  const session = {
+    id: 'session-cold',
+    snapshotEvents: () => [
+      { type: 'model/selection', data: { provider: 'claude-provider', model: 'claude-opus' } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'use ultrawork' }] } },
+      { type: 'model/selection', data: { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' } },
+    ],
+  }
+  let current = { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' }
+  const agent = { session, options: current, model: { current: () => current, select: value => { current = value } } }
+  const omoRoles = { roleFor: () => 'atlas', configFor: () => ({ fallbackModels: [] }), fallbackModelsFor: () => [] }
+  selectRoleRoute(omoRoles, state(), session, agent, 2, 1)
+  assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus' })
+})
+
+test('an ultrawork model effort is honored', () => {
+  let selected
+  const agent = {
+    session: { id: 'session-ultra-model-effort', snapshotEvents: () => [] },
+    options: { provider: 'role-provider', model: 'claude-opus' },
+    model: { current: () => ({ provider: 'role-provider', model: 'claude-opus' }), select: value => { selected = value } },
+  }
+  const omoRoles = {
+    roleFor: () => 'sisyphus',
+    configFor: () => ({ ultrawork: { model: { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' } } }),
+    fallbackModelsFor: () => [],
+  }
+  selectRoleRoute(omoRoles, { ...state(), ultraworkTurn: 1 }, agent.session, agent, 1, 1)
+  assert.deepEqual(selected, { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
+})
