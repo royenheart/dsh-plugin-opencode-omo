@@ -19,20 +19,21 @@ seam:
 |---|---|
 | Whole opencode+omo system prompt (env block + role prompt + plan prompt) per step | `ctx.systemPrompt.section({ complete: true, text: () => ... })` — the text provider is re-evaluated on every assembly and reads the exact initiator through `ctx.agents.currentInitiator()` |
 | Suppress harness identity + runtime snapshot | `complete: true` + `ctx.systemPrompt.suppressRuntimeContext()` |
-| opencode per-model tool gating (apply_patch vs edit/write) | `system-prompt/assemble` waterfall mutates `assembly.tools` |
+| opencode per-model tool gating (apply_patch vs edit/write) | per-agent `ctx.tools.register(..., { when })` conditions plus scoped restrictions over inherited tools; `system-prompt/assemble` no longer owns tool declarations |
 | Ultrawork keyword detection before assembly | `agent/inbox/claimed` (fires inside `preStep` before `systemPrompt.assemble`) |
 | maxSteps + verbatim MAX_STEPS_PROMPT | patched request-only assistant tail; system-prompt section on a stock host |
-| Role primary model + ultrawork override | `agent/request` waterfall |
-| Fallback chain before harness retry policy | `agent/request-error` waterfall returning `{ kind: 'retry' }` |
+| Role primary model | `agent/inbox/claimed` + `agent.model.select()` before step preparation |
+| Fallback during a failed step | Not applied on dsh 0.2.2: step provider/model/effort are frozen; settings remain configurable but the preset does not switch models inside a step |
 
 All of these are scope-filtered events: a listener registered in the preset's
 standing scope receives every agent under that preset (scope parent chain),
 which is exactly the isolation the driver seam provided. Verified with three
 probe tests against the dsh test harness: complete persona replacement, gpt
-tool gating, role route, request-error fallback, max-steps injection, and
-ultrawork routing all fire with a plain `ReactLoopAgent`.
+tool gating, role route, and max-steps injection all fire with a plain
+`ReactLoopAgent`; ultrawork model overrides and step-level fallback are
+intentionally absent on 0.2.2.
 
-## Current fidelity posture (dsh 0.2.1-rc.2)
+## Current fidelity posture (dsh 0.2.2-rc.1)
 
 1. `PreStepDecision.assistantPrefill` is still absent upstream. This plugin
    ships `patches/0001-agent-pre-step-assistant-prefill.patch`, which adds a
@@ -45,19 +46,20 @@ ultrawork routing all fire with a plain `ReactLoopAgent`.
    and request reconstruction (header vs live assembly). Transcript, stats, and
    compaction still omit the ceiling text on both paths.
 
-2. The complete persona text provider has no turn/step argument, and 0.2.1's
+2. The complete persona text provider has no turn/step argument, and the current
    `AssembleContext` no longer carries an Agent. The assembly reads the exact
-   initiator through `ctx.agents.currentInitiator()`; the step about to run is
-   inferred from `session.snapshotEvents()` (`turn/start` + last `step/start`),
-   and ultrawork is detected one event earlier via `agent/inbox/claimed`.
-3. The env block and tool table are computed once per step. On an in-step
-   fallback retry the reused assembly keeps the primary route's model id and
-   tool table instead of re-rendering for the fallback model (openCode
-   re-renders per attempt); the request route itself advances to the fallback.
-4. Tool gating filters the request schemas through the assembly waterfall and
-   is mirrored at execution by `tools/pre-execute` (`gateToolCall`), so a
-   hallucinated call outside the model-family/role surface is denied before it
-   reaches the default loop's registry.
+   initiator through `ctx.agents.currentInitiator()` and uses the step's frozen
+   `AssembleContext.modelSelection`; the role selection is recorded one event
+   earlier via `agent/inbox/claimed`.
+3. The env block and tool table are computed once per step from the frozen
+   selection. dsh 0.2.2 freezes provider/model/effort before the request, so
+   this preset does not switch models inside a failed step; a new turn selects
+   the role route again at `agent/inbox/claimed`.
+4. Tool gating is step admission: per-agent conditional registrations and
+   scoped restrictions filter the request catalog, and `tools/pre-execute`
+   (`gateToolCall`) mirrors the same predicate at execution, so a hallucinated
+   call outside the model-family/role surface is denied before it reaches the
+   default loop's registry.
 
 ## dsh-side footprint after the re-scan
 
@@ -73,7 +75,7 @@ plugin-specific branch.
   documented system-prompt fallback otherwise. Discussion #2407 is the upstream
   ask for the same seam.
 
-Everything else runs on an unmodified 0.2.1-rc.2 checkout.
+Everything else runs on an unmodified 0.2.2-rc.1 checkout.
 
 
 ## State and policy authority

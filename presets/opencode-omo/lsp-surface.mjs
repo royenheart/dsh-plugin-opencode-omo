@@ -161,7 +161,9 @@ export function apply(ctx) {
         return { ...section, text: rewriteLspPromptSection(section.text) }
       })
       : transformed.sections
-    return { ...transformed, sections, tools: applyOmoLspCatalog(transformed.tools) }
+    // Tool visibility moved to per-agent registration conditions; the
+    // waterfall may only rewrite sections/contexts/variables.
+    return { ...transformed, sections }
   })
 
   ctx.on('tools/pre-execute', async (exec, next) => {

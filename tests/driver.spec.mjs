@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fallbackRetryable, gateToolCall, opencodeTools, opencodeUsesPatch, persistPlanFile, systemPromptFor } from '../presets/opencode-omo/driver.mjs'
+import { gateToolCall, opencodeTools, opencodeUsesPatch, persistPlanFile, systemPromptFor } from '../presets/opencode-omo/driver.mjs'
 import { renderRulesFor } from '../presets/opencode-omo/rules.mjs'
 
 function roleFace(role = 'sisyphus') {
@@ -269,18 +269,6 @@ test('send_message survives a narrow child allow list but not the primary gate',
     gateToolCall('send_message', 'deepseek-v4', { allow: ['read', 'read_image'] }, false),
     /not available to this delegated role/,
   )
-})
-
-test('fallback advances only on omo-style retryable failure codes', () => {
-  assert.equal(fallbackRetryable({ code: 'RATE_LIMIT' }), true)
-  assert.equal(fallbackRetryable({ code: 'QUOTA' }), true)
-  assert.equal(fallbackRetryable({ code: 'SERVER' }), true)
-  assert.equal(fallbackRetryable({ code: 'MODEL_NOT_FOUND' }), true)
-  assert.equal(fallbackRetryable({ status: 429 }), true)
-  assert.equal(fallbackRetryable({ status: 404 }), true)
-  assert.equal(fallbackRetryable({ code: 'AUTH' }), false)
-  assert.equal(fallbackRetryable({ code: 'CONTEXT_WINDOW_EXCEEDED' }), false)
-  assert.equal(fallbackRetryable(undefined), false)
 })
 
 test('tool gate matches opencode model-family gating on both sides', () => {
