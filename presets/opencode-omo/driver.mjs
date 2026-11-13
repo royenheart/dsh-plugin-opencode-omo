@@ -988,7 +988,7 @@ export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
   const target = route.target
   const ultra = ultraworkRouteFor(omoRoles, state, session, turn)
   const sampling = defaultRoleSampling(currentRole(omoRoles, session), route.model)
-  const effort = ultra?.reasoningEffort ?? target?.reasoningEffort ?? sampling.reasoningEffort
+  const effort = ultra?.reasoningEffort ?? target?.reasoningEffort ?? current?.reasoningEffort ?? sampling.reasoningEffort
   const selection = {
     provider: route.provider,
     model: route.model,

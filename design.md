@@ -47,13 +47,13 @@ with a plain `ReactLoopAgent`; step-level fallback is intentionally absent.
 
 2. The complete persona text provider has no turn/step argument, and the current
    `AssembleContext` no longer carries an Agent. The assembly reads the exact
-   initiator through `ctx.agents.currentInitiator()`; the step about to run is
-   inferred from `session.snapshotEvents()` (`turn/start` + last `step/start`),
-   and ultrawork is detected one event earlier via `agent/inbox/claimed`.
-3. The env block and tool table are computed once per step. On an in-step
-   fallback retry the reused assembly keeps the primary route's model id and
-   tool table instead of re-rendering for the fallback model (openCode
-   re-renders per attempt); the request route itself advances to the fallback.
+   initiator through `ctx.agents.currentInitiator()` and uses the step's frozen
+   `AssembleContext.modelSelection`; ultrawork is detected one event earlier
+   via `agent/inbox/claimed`, where the role selection is recorded.
+3. The env block and tool table are computed once per step from the frozen
+   selection. dsh 0.2.2 freezes provider/model/effort before the request, so
+   this preset does not switch models inside a failed step; a new turn selects
+   the role route again at `agent/inbox/claimed`.
 4. Tool gating is step admission: per-agent conditional registrations and
    scoped restrictions filter the request catalog, and `tools/pre-execute`
    (`gateToolCall`) mirrors the same predicate at execution, so a hallucinated

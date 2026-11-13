@@ -57,3 +57,18 @@ test('an ultrawork effort override is recorded without replacing the model', () 
   assert.deepEqual(route, { provider: 'session-provider', model: 'gpt-5.5', target: undefined })
   assert.deepEqual(selected, { provider: 'session-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
 })
+
+test('following the current model preserves an explicit user effort', () => {
+  let selected
+  const agent = {
+    session: { id: 'session-follow-effort', snapshotEvents: () => [] },
+    options: { provider: 'session-provider', model: 'gpt-5.5' },
+    model: {
+      current: () => ({ provider: 'session-provider', model: 'gpt-5.5', reasoningEffort: 'high' }),
+      select: value => { selected = value },
+    },
+  }
+  const omoRoles = { roleFor: () => 'sisyphus', configFor: () => ({ fallbackModels: [] }), fallbackModelsFor: () => [] }
+  selectRoleRoute(omoRoles, state(), agent.session, agent, 1, 2)
+  assert.deepEqual(selected, { provider: 'session-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
+})
