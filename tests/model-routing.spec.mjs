@@ -215,7 +215,7 @@ test('cold recovery restores the model before an ultrawork selection from the se
   }
   let current = { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' }
   const agent = { session, options: current, model: { current: () => current, select: value => { current = value } } }
-  const omoRoles = { roleFor: () => 'atlas', configFor: () => ({ fallbackModels: [] }), fallbackModelsFor: () => [] }
+  const omoRoles = { roleFor: () => 'atlas', configFor: () => ({ ultrawork: { model: { provider: 'gpt-provider', model: 'gpt-5.5' } }, fallbackModels: [] }), fallbackModelsFor: () => [] }
   selectRoleRoute(omoRoles, state(), session, agent, 2, 1)
   assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus' })
 })
@@ -276,4 +276,39 @@ test('a reloaded ultrawork turn saves the recovered base, not the temporary mode
   s.ultraworkTurn = 0
   selectRoleRoute(omoRoles, s, session, agent, 3, 1)
   assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus' })
+})
+
+test('an inline-code ultrawork mention does not trigger cold recovery', () => {
+  const session = {
+    id: 'session-inline-ultra',
+    snapshotEvents: () => [
+      { type: 'model/selection', data: { provider: 'a-provider', model: 'a-model' } },
+      { type: 'model/selection', data: { provider: 'b-provider', model: 'b-model' } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'use `ultrawork` only in docs' }] } },
+    ],
+  }
+  let current = { provider: 'b-provider', model: 'b-model' }
+  const agent = { session, options: current, model: { current: () => current, select: value => { current = value } } }
+  const omoRoles = { roleFor: () => 'atlas', configFor: () => ({ ultrawork: { model: { provider: 'u-provider', model: 'u-model' } }, fallbackModels: [] }), fallbackModelsFor: () => [] }
+  selectRoleRoute(omoRoles, state(), session, agent, 2, 1)
+  assert.deepEqual(current, { provider: 'b-provider', model: 'b-model' })
+})
+
+test('the first ultrawork turn recovers the AgentOptions base after reload', () => {
+  const session = {
+    id: 'session-first-ultra',
+    snapshotEvents: () => [
+      { type: 'model/selection', data: { provider: 'u-provider', model: 'u-model', reasoningEffort: 'high' } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'ultrawork' }] } },
+    ],
+  }
+  let current = { provider: 'u-provider', model: 'u-model', reasoningEffort: 'high' }
+  const agent = {
+    session,
+    options: { provider: 'a-provider', model: 'a-model' },
+    model: { current: () => current, select: value => { current = value } },
+  }
+  const omoRoles = { roleFor: () => 'atlas', configFor: () => ({ ultrawork: { model: { provider: 'u-provider', model: 'u-model' } }, fallbackModels: [] }), fallbackModelsFor: () => [] }
+  selectRoleRoute(omoRoles, state(), session, agent, 2, 1)
+  assert.deepEqual(current, { provider: 'a-provider', model: 'a-model' })
 })
