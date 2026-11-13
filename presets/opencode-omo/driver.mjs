@@ -8,9 +8,10 @@
 //   assembly instead of being built by an overridden loop method.
 // - per-agent conditional tool registrations apply opencode's per-model tool
 //   gating (apply_patch vs edit/write) to step admission.
-// - `agent/inbox/claimed` detects omo ultrawork keywords before assembly.
-// - `agent/request` / `agent/request-error` route through the role's primary
-//   model and advance the fallback chain, exactly like the previous subclass.
+// - `agent/inbox/claimed` detects omo ultrawork keywords and records the role
+//   model/effort before the loop snapshots the step selection.
+// - `agent/request` only adjusts sampling controls; provider, model and
+//   reasoning effort are frozen by step preparation on dsh 0.2.2.
 // - Named specialist / task() children pin an omo role and keep this complete
 //   section (no static persona overlay), so they see `<env>` + the specialist
 //   body instead of the dsh harness identity.
@@ -990,6 +991,33 @@ function finalRouteFor(omoRoles, state, session, turn, step, variables, agent) {
   return { provider, model, target }
 }
 
+/**
+ * Choose the role route for the step that is about to be prepared. dsh
+ * snapshots `agent.model.current()` immediately after `agent/inbox/claimed`,
+ * so the role model and effort must be recorded here; `agent/request` is too
+ * late to change them on 0.2.2.
+ */
+export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
+  const current = typeof agent.model?.current === 'function'
+    ? agent.model.current()
+    : undefined
+  const variables = current ?? { provider: agent.options?.provider, model: agent.options?.model }
+  const route = finalRouteFor(omoRoles, state, session, turn, step, variables, agent)
+  const target = route.target
+  const ultra = ultraworkRouteFor(omoRoles, state, session, turn)
+  const sampling = defaultRoleSampling(currentRole(omoRoles, session), route.model)
+  const effort = ultra?.reasoningEffort ?? target?.reasoningEffort ?? sampling.reasoningEffort
+  const selection = {
+    provider: route.provider,
+    model: route.model,
+    ...(effort === undefined ? {} : { reasoningEffort: effort }),
+  }
+  if (target !== undefined && typeof agent.model?.select === 'function') {
+    agent.model.select(selection)
+  }
+  return route
+}
+
 function advanceFallback(omoRoles, state, session, turn, step) {
   if (omoRoles === undefined) return false
   const key = `${turn}:${step}`
@@ -1177,57 +1205,35 @@ export function apply(ctx) {
   // BEFORE the system-prompt assembly, so the env block and route see the
   // override for this exact step (the same ordering the old subclass had).
   ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
+    const state = stateFor(agent)
     const clean = messageText(message).replace(/```[\s\S]*?```/g, '').replace(/`[^`]+`/g, '')
     if (/\b(ultrawork|ulw)\b/i.test(clean)) {
-      stateFor(agent).ultraworkTurn = turn
+      state.ultraworkTurn = turn
     }
+    // The loop snapshots agent.model.current() after this emit. Record the
+    // role route here; this is the last seam where the step selection can move.
+    const position = nextPosition(agent.session)
+    const route = selectRoleRoute(omoRoles, state, agent.session, agent, turn, position.step)
+    state.resolvedRoutes.set(`${turn}:${position.step}`, route)
   })
 
-  // Role primary model + ultrawork override + omo sampling defaults. Prepend
-  // for the same reason as the assembly listener: dsh's model-selection
-  // listener would otherwise run last and silently override the role route
-  // (and split the request route from the prompt this preset rendered).
+  // Sampling controls are the only request-time change. Provider, model and
+  // reasoning effort are already selected in agent/inbox/claimed and frozen
+  // by step preparation; agent/request must preserve them on 0.2.2.
   ctx.on('agent/request', async ({ agent, turn, step }, next) => {
     const resolved = await next()
     const state = stateFor(agent)
-    const role = currentRole(omoRoles, agent.session)
     const planned = state.resolvedRoutes.get(`${turn}:${step}`)
     const route = planned ?? finalRouteFor(
       omoRoles, state, agent.session, turn, step,
       { provider: resolved.provider, model: resolved.model }, agent,
     )
-    const target = route.target
-    const ultra = ultraworkRouteFor(omoRoles, state, agent.session, turn)
-    const model = route.model
-    const sampling = defaultRoleSampling(role, model)
-    if (target !== undefined) {
-      // A reasoning-effort selected for another model must not leak into
-      // the role/fallback route; use the entry's own effort when present.
-      const { reasoningEffort: _inheritedEffort, ...withoutInheritedEffort } = resolved
-      const effort = ultra?.reasoningEffort ?? target.reasoningEffort ?? sampling.reasoningEffort
-      return {
-        ...withoutInheritedEffort,
-        provider: route.provider,
-        model: route.model,
-        ...(effort !== undefined ? { reasoningEffort: effort } : {}),
-        ...(sampling.temperature !== undefined ? { temperature: sampling.temperature } : {}),
-      }
-    }
-    const effort = ultra?.reasoningEffort ?? sampling.reasoningEffort
+    const sampling = defaultRoleSampling(currentRole(omoRoles, agent.session), route.model)
     return {
       ...resolved,
-      ...(effort !== undefined && resolved.reasoningEffort === undefined ? { reasoningEffort: effort } : {}),
       ...(sampling.temperature !== undefined ? { temperature: sampling.temperature } : {}),
     }
   }, { prepend: true })
-
-  ctx.on('agent/request-error', async ({ agent, turn, step, failure, signal }, next) => {
-    if (signal?.aborted || !fallbackRetryable(failure)) return next()
-    if (advanceFallback(omoRoles, stateFor(agent), agent.session, turn, step)) {
-      return { kind: 'retry' }
-    }
-    return next()
-  })
 
   ctx.on('agent/disposed', ({ agent }) => {
     states.delete(agent.session.id)
