@@ -772,7 +772,7 @@ function nextPosition(session) {
 function currentRouteModel(state, session, agent) {
   const position = currentPosition(session)
   const key = `${position.turn}:${position.step}`
-  return state.assembledRoutes.get(key)?.model ?? agent.options?.model
+  return state.assembledRoutes.get(key)?.model ?? agent.model?.current?.()?.model ?? agent.options?.model
 }
 
 /** Render the omo + opencode whole system prompt for one concrete route. */
@@ -896,7 +896,6 @@ function sessionHasHistory(session) {
 /** State per live agent: fallback chain position, ultrawork turn, and the prompt/request-consistent route per turn:step. */
 function newState() {
   return {
-    fallbackAttempts: new Map(),
     resolvedRoutes: new Map(),
     assembledRoutes: new Map(),
     lastRouteTurn: 0,
@@ -931,17 +930,6 @@ function maxStepsFor(omoRoles, session) {
     : Infinity
 }
 
-function fallbackModelsFor(omoRoles, session) {
-  const config = roleConfigFor(omoRoles, session)
-  if (config?.fallbackModels !== undefined && config.fallbackModels.length > 0) {
-    return config.fallbackModels
-  }
-  if (omoRoles?.fallbackModelsFor !== undefined) {
-    return omoRoles.fallbackModelsFor(currentRole(omoRoles, session)) ?? []
-  }
-  return []
-}
-
 function ultraworkRouteFor(omoRoles, state, session, turn) {
   if (state.ultraworkTurn !== turn) return undefined
   return roleConfigFor(omoRoles, session)?.ultrawork
@@ -959,9 +947,8 @@ function primaryModelFor(omoRoles, session) {
 
 function roleRoute(omoRoles, state, session, turn, step) {
   if (turn !== state.lastRouteTurn) {
-    // A fresh turn never inherits an older step's fallback position, an
-    // older step's resolved route, or an older turn's ultrawork override.
-    state.fallbackAttempts.clear()
+    // A fresh turn never inherits an older step's resolved route or an older
+    // turn's ultrawork override.
     state.resolvedRoutes.clear()
     state.assembledRoutes.clear()
     if (state.ultraworkTurn !== turn) state.ultraworkTurn = 0
@@ -970,17 +957,12 @@ function roleRoute(omoRoles, state, session, turn, step) {
   if (omoRoles === undefined) return undefined
   const ultrawork = ultraworkRouteFor(omoRoles, state, session, turn)
   if (ultrawork?.model !== undefined) return ultrawork.model
-  const attempt = state.fallbackAttempts.get(`${turn}:${step}`)
-  if (attempt !== undefined) {
-    const fallback = fallbackModelsFor(omoRoles, session)[attempt]
-    if (fallback !== undefined) return fallback
-  }
   return primaryModelFor(omoRoles, session)
 }
 
 /**
  * Resolve the route the request will actually use for one turn:step.
- * A role primary/fallback/ultrawork target wins; otherwise the assembly's
+ * A role primary/ultrawork target wins; otherwise the assembly's
  * `provider`/`model` variables (the session's live model selection, set by
  * dsh's model-selection listener) or the agent's declared options are used.
  */
@@ -1012,29 +994,10 @@ export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
     model: route.model,
     ...(effort === undefined ? {} : { reasoningEffort: effort }),
   }
-  if (target !== undefined && typeof agent.model?.select === 'function') {
+  if ((target !== undefined || effort !== undefined) && selection.provider !== '' && selection.model !== '' && typeof agent.model?.select === 'function') {
     agent.model.select(selection)
   }
   return route
-}
-
-function advanceFallback(omoRoles, state, session, turn, step) {
-  if (omoRoles === undefined) return false
-  const key = `${turn}:${step}`
-  const attempt = state.fallbackAttempts.get(key)
-  const nextIndex = attempt === undefined ? 0 : attempt + 1
-  const fallback = fallbackModelsFor(omoRoles, session)[nextIndex]
-  if (fallback === undefined) {
-    state.fallbackAttempts.delete(key)
-    return false
-  }
-  state.fallbackAttempts.set(key, nextIndex)
-  // The retry reuses the assembly computed for the primary route; update the
-  // request plan so the next attempt actually routes to the fallback instead
-  // of re-sending the primary. The prompt/tools remain the assembled primary
-  // surface until the next step (the loop does not re-assemble a retry).
-  state.resolvedRoutes.set(key, { provider: fallback.provider, model: fallback.model, target: fallback })
-  return true
 }
 
 /** omo reference agent-config sampling defaults applied by the loop shim. */
@@ -1057,25 +1020,6 @@ function defaultRoleSampling(role, model) {
   return {}
 }
 
-/**
- * Failure classes omo advances its fallback chain on. AUTH, context-window
- * overflow, aborts, and malformed requests stay on the same model (or the
- * harness's own retry policy) instead of burning a fallback entry.
- */
-const FALLBACK_CODES = new Set([
-  'RATE_LIMIT', 'QUOTA', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'EMPTY_RESPONSE', 'MODEL_NOT_FOUND',
-])
-
-function fallbackRetryable(failure) {
-  if (failure === undefined) return false
-  if (typeof failure?.code === 'string' && FALLBACK_CODES.has(failure.code)) return true
-  // 404 is the cross-adapter approximation for model-not-found (dsh has no
-  // dedicated code yet; the seam audit recommends MODEL_NOT_FOUND upstream).
-  const status = failure?.status
-  return Number.isInteger(status) && (status === 404 || status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599))
-}
-
-export { fallbackRetryable }
 
 /**
  * Stock-host maxSteps path: render opencode's MAX_STEPS_PROMPT as a
@@ -1148,10 +1092,14 @@ export function apply(ctx) {
     if (agent === undefined) return transformed
     const state = stateFor(agent)
     const position = nextPosition(agent.session)
-    const route = finalRouteFor(
-      omoRoles, state, agent.session, position.turn, position.step,
-      transformed.variables, agent,
-    )
+    // Use the selection frozen for this step. Role settings can change while
+    // the loop runs; a tool-continuation step has no inbox claim, so reading
+    // the live role config here would split the prompt/tools from the request.
+    const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
+    const route = {
+      provider: current?.provider ?? transformed.variables.provider ?? agent.options?.provider ?? '',
+      model: current?.model ?? transformed.variables.model ?? agent.options?.model ?? '',
+    }
     state.resolvedRoutes.set(`${position.turn}:${position.step}`, route)
     state.assembledRoutes.set(`${position.turn}:${position.step}`, route)
     transformed.variables.provider = route.provider
@@ -1224,10 +1172,7 @@ export function apply(ctx) {
     const resolved = await next()
     const state = stateFor(agent)
     const planned = state.resolvedRoutes.get(`${turn}:${step}`)
-    const route = planned ?? finalRouteFor(
-      omoRoles, state, agent.session, turn, step,
-      { provider: resolved.provider, model: resolved.model }, agent,
-    )
+    const route = planned ?? { provider: resolved.provider, model: resolved.model }
     const sampling = defaultRoleSampling(currentRole(omoRoles, agent.session), route.model)
     return {
       ...resolved,

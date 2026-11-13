@@ -27,3 +27,33 @@ test('the role primary is recorded before step preparation', () => {
   assert.deepEqual(route, { provider: 'role-provider', model: 'gpt-5.5', target: { provider: 'role-provider', model: 'gpt-5.5' } })
   assert.deepEqual(selected, { provider: 'role-provider', model: 'gpt-5.5', reasoningEffort: 'medium' })
 })
+
+test('a follow-current role still records its reasoning effort', () => {
+  let selected
+  const agent = {
+    session: { id: 'session-follow', snapshotEvents: () => [] },
+    options: { provider: 'session-provider', model: 'gpt-5.5' },
+    model: { current: () => ({ provider: 'session-provider', model: 'gpt-5.5' }), select: value => { selected = value } },
+  }
+  const omoRoles = { roleFor: () => 'sisyphus', configFor: () => ({ fallbackModels: [] }), fallbackModelsFor: () => [] }
+  const route = selectRoleRoute(omoRoles, state(), agent.session, agent, 1, 2)
+  assert.deepEqual(route, { provider: 'session-provider', model: 'gpt-5.5', target: undefined })
+  assert.deepEqual(selected, { provider: 'session-provider', model: 'gpt-5.5', reasoningEffort: 'medium' })
+})
+
+test('an ultrawork effort override is recorded without replacing the model', () => {
+  let selected
+  const agent = {
+    session: { id: 'session-ultra', snapshotEvents: () => [] },
+    options: { provider: 'session-provider', model: 'gpt-5.5' },
+    model: { current: () => ({ provider: 'session-provider', model: 'gpt-5.5' }), select: value => { selected = value } },
+  }
+  const omoRoles = {
+    roleFor: () => 'sisyphus',
+    configFor: () => ({ fallbackModels: [], ultrawork: { reasoningEffort: 'high' } }),
+    fallbackModelsFor: () => [],
+  }
+  const route = selectRoleRoute(omoRoles, { ...state(), ultraworkTurn: 1 }, agent.session, agent, 1, 2)
+  assert.deepEqual(route, { provider: 'session-provider', model: 'gpt-5.5', target: undefined })
+  assert.deepEqual(selected, { provider: 'session-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
+})

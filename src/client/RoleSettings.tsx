@@ -514,7 +514,7 @@ export function RoleSettingsSection({
   return (
     <div ref={rootRef} style={STYLE.root}>
       <div style={STYLE.hint}>
-        为每个 omo 角色配置主模型与 fallback 模型。主模型可选择“跟随当前”、使用 omo 默认或固定模型；点击 ＋ 在角色框下方选择 fallback，可连续添加多个，点击取消或空白处关闭不会添加。
+        为每个 omo 角色配置主模型与 fallback 模型。主模型可选择“跟随当前”、使用 omo 默认或固定模型；dsh 0.2.2 在 step 准备时冻结模型，当前 fallback 配置不会在失败 step 内自动切换，点击 ＋ 添加的条目会保留供后续兼容。
       </div>
       {(state.error ?? modelError) !== null && <div style={STYLE.error}>{state.error ?? modelError}</div>}
       {roleRows}

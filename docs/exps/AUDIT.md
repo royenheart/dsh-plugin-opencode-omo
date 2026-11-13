@@ -20,7 +20,7 @@
 | 角色默认不切 omo 主模型 | `OmoRoleRegistry.primaryModelFor()`：无配置→`AGENT_MODEL_REQUIREMENTS` 首个目录匹配；`model:null`→显式跟随会话；fallback 链从主模型之后开始（omo `attachFallbackModels` 语义） | `tests/host.spec.mjs` primary/fallback/显式跟随三组断言 |
 | 缺角色采样默认值 | `agent/request`：sisyphus/hephaestus GPT `reasoningEffort:medium`、atlas `temperature:0.1`；ultrawork effort 仍最高优先级 | build/typecheck；逻辑集中于 `defaultRoleSampling()` |
 | plan-mode 文案压缩、路径硬编码 | `plan-mode.txt` 逐字还原（含 `${planInfo}`）；`build-switch.txt` 逐字复制；driver 按 `session.header.createdAt + session.id` 生成 `.opencode/plans/<created>-<slug>.md`，并在“上一请求头为 plan、当前已退出”的第一步注入 BUILD_SWITCH；`exit_plan_mode` 获批后经 `tools/post-execute` 把计划落盘到同一路径 | driver tests 4 条 |
-| 任意错误都切 fallback | `fallbackRetryable()`：仅 `RATE_LIMIT/QUOTA/SERVER/TRANSPORT/TIMEOUT/EMPTY_RESPONSE/MODEL_NOT_FOUND` 或 404/408/425/429/5xx 前进 fallback；AUTH/CONTEXT_WINDOW_EXCEEDED/abort 交给 dsh 自身策略 | driver tests 1 条 |
+| 任意错误都切 fallback | dsh 0.2.2 在 step 准备时冻结 provider/model/effort；本预设改为主模型在 `agent/inbox/claimed` 选择，不再在失败 step 内切 fallback。fallback 设置仅供未来宿主/配置保留 | model-routing test |
 | 过滤后的工具仍可被幻觉调用 | 步骤准入的 `ctx.tools.register(..., { when })` 条件过滤模型可见工具；`tools/pre-execute` deny mirror：GPT 家族 deny edit/write，非 GPT 家族 deny apply_patch | `gateToolCall`/`opencodeUsesPatch` tests |
 | 缺角色模型家族 prompt | 子代理从 omo 源码提取 27 个 variant 文件：Sisyphus 新增 claude-4-8/fable-5/kimi-k2-6/k2-7；Hephaestus GPT 4 变体；Atlas 8 变体逐字复制；oracle/metis/momus 模型变体；librarian/explore/looker 原文。`driver.mjs` 按实际路由模型选择变体并渲染动态占位符 | 全角色×全模型扫描无残留 `${}`/`{{}}`；driver tests 2 条 |
 | env workspace root 退化为 cwd | `gitRoot()` 向上找 `.git`，env 块 Workspace root 使用 git root（opencode `ctx.worktree` 语义） | 代码路径；非 git 回退 cwd |

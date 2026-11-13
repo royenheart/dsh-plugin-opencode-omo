@@ -22,15 +22,15 @@ seam:
 | opencode per-model tool gating (apply_patch vs edit/write) | per-agent `ctx.tools.register(..., { when })` conditions plus scoped restrictions over inherited tools; `system-prompt/assemble` no longer owns tool declarations |
 | Ultrawork keyword detection before assembly | `agent/inbox/claimed` (fires inside `preStep` before `systemPrompt.assemble`) |
 | maxSteps + verbatim MAX_STEPS_PROMPT | patched request-only assistant tail; system-prompt section on a stock host |
-| Role primary model + ultrawork override | `agent/request` waterfall |
-| Fallback chain before harness retry policy | `agent/request-error` waterfall returning `{ kind: 'retry' }` |
+| Role primary model + ultrawork override | `agent/inbox/claimed` + `agent.model.select()` before step preparation |
+| Fallback during a failed step | Not applied on dsh 0.2.2: step provider/model/effort are frozen; settings remain configurable but the preset does not switch models inside a step |
 
 All of these are scope-filtered events: a listener registered in the preset's
 standing scope receives every agent under that preset (scope parent chain),
 which is exactly the isolation the driver seam provided. Verified with three
 probe tests against the dsh test harness: complete persona replacement, gpt
-tool gating, role route, request-error fallback, max-steps injection, and
-ultrawork routing all fire with a plain `ReactLoopAgent`.
+tool gating, role route, max-steps injection, and ultrawork routing all fire
+with a plain `ReactLoopAgent`; step-level fallback is intentionally absent.
 
 ## Current fidelity posture (dsh 0.2.2-rc.1)
 
