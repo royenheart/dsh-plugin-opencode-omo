@@ -5,7 +5,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { selectRoleRoute } from '../presets/opencode-omo/driver.mjs'
+import { currentToolModel, selectRoleRoute } from '../presets/opencode-omo/driver.mjs'
 
 function state() {
   return { fallbackAttempts: new Map(), resolvedRoutes: new Map(), assembledRoutes: new Map(), lastRouteTurn: 1, ultraworkTurn: 0 }
@@ -71,4 +71,31 @@ test('following the current model preserves an explicit user effort', () => {
   const omoRoles = { roleFor: () => 'sisyphus', configFor: () => ({ fallbackModels: [] }), fallbackModelsFor: () => [] }
   selectRoleRoute(omoRoles, state(), agent.session, agent, 1, 2)
   assert.deepEqual(selected, { provider: 'session-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
+})
+
+test('ultrawork effort does not leak into the next ordinary turn', () => {
+  let selected
+  const agent = {
+    session: { id: 'session-after-ultra', snapshotEvents: () => [] },
+    options: { provider: 'role-provider', model: 'gpt-5.5' },
+    model: {
+      current: () => ({ provider: 'role-provider', model: 'gpt-5.5', reasoningEffort: 'high' }),
+      select: value => { selected = value },
+    },
+  }
+  const s = { ...state(), ultraworkTurn: 0, lastEffort: { value: 'high', source: 'ultra' } }
+  const omoRoles = { roleFor: () => 'sisyphus', configFor: () => ({ model: { provider: 'role-provider', model: 'gpt-5.5' }, fallbackModels: [] }), fallbackModelsFor: () => [] }
+  selectRoleRoute(omoRoles, s, agent.session, agent, 2, 1)
+  assert.deepEqual(selected, { provider: 'role-provider', model: 'gpt-5.5', reasoningEffort: 'medium' })
+})
+
+
+test('tool admission prefers the step model selection over live role settings', () => {
+  const agent = {
+    session: { id: 'session-tools', snapshotEvents: () => [] },
+    options: { provider: 'live-provider', model: 'live-model' },
+    model: { current: () => ({ provider: 'live-provider', model: 'live-model' }) },
+  }
+  const ctx = { get: () => ({ configFor: () => ({ model: { provider: 'role-provider', model: 'role-model' } }) }) }
+  assert.equal(currentToolModel(ctx, agent, { provider: 'frozen-provider', model: 'frozen-model' }), 'frozen-model')
 })

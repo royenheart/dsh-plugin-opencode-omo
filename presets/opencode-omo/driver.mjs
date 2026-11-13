@@ -824,11 +824,14 @@ function renderOmoPrompt(ctx, omoRoles, state, agent, provider, model, toolSet) 
  * selection), so this path is only the pre-waterfall fallback.
  */
 export function systemPromptFor(ctx, omoRoles, state, agent, assembleContext) {
-  const session = agent.session
-  const position = nextPosition(session)
-  const route = roleRoute(omoRoles, state, session, position.turn, position.step)
-  const provider = route?.provider ?? agent.options.provider ?? ''
-  const model = route?.model ?? agent.options.model ?? ''
+  // The pre-waterfall text provider has no step context; prefer the frozen
+  // model selection over live role settings, and only fall back to roleRoute
+  // when no selection is available yet.
+  const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
+  const position = nextPosition(agent.session)
+  const route = roleRoute(omoRoles, state, agent.session, position.turn, position.step)
+  const provider = current?.provider ?? route?.provider ?? agent.options.provider ?? ''
+  const model = current?.model ?? route?.model ?? agent.options.model ?? ''
   return renderOmoPrompt(
     ctx, omoRoles, state, agent, provider, model, assembleContext?.toolSet,
   )
@@ -867,24 +870,14 @@ export function restrictionFor(agent) {
  */
 export function currentToolModel(ctx, agent, modelSelection) {
   if (agent?.session === undefined) return agent?.options?.model
-  let omoRoles
-  try {
-    omoRoles = ctx.get('omoRoles')
-  } catch {
-    omoRoles = undefined
-  }
   const state = stateFor(agent)
-  const position = nextPosition(agent.session)
-  const selection = modelSelection ?? (typeof agent.model?.current === 'function'
-    ? agent.model.current()
-    : undefined)
-  const variables = selection ?? {
-    provider: agent.options?.provider,
-    model: agent.options?.model,
-  }
-  return finalRouteFor(
-    omoRoles, state, agent.session, position.turn, position.step, variables, agent,
-  ).model
+  const position = currentPosition(agent.session)
+  const key = `${position.turn}:${position.step}`
+  return modelSelection?.model
+    ?? state.assembledRoutes.get(key)?.model
+    ?? state.resolvedRoutes.get(key)?.model
+    ?? (typeof agent.model?.current === 'function' ? agent.model.current()?.model : undefined)
+    ?? agent.options?.model
 }
 
 /** Whether a child session has already run a turn (i.e. this is a cold resume). */
@@ -898,6 +891,7 @@ function newState() {
   return {
     resolvedRoutes: new Map(),
     assembledRoutes: new Map(),
+    lastEffort: undefined,
     lastRouteTurn: 0,
     ultraworkTurn: 0,
   }
@@ -988,7 +982,13 @@ export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
   const target = route.target
   const ultra = ultraworkRouteFor(omoRoles, state, session, turn)
   const sampling = defaultRoleSampling(currentRole(omoRoles, session), route.model)
-  const effort = ultra?.reasoningEffort ?? target?.reasoningEffort ?? current?.reasoningEffort ?? sampling.reasoningEffort
+  const inherited = current?.reasoningEffort !== undefined && state.lastEffort?.value === current.reasoningEffort
+    && state.lastEffort.source !== 'user'
+    ? undefined
+    : current?.reasoningEffort
+  const effort = ultra?.reasoningEffort ?? (target === undefined ? inherited : undefined) ?? target?.reasoningEffort ?? sampling.reasoningEffort
+  const source = ultra?.reasoningEffort !== undefined ? 'ultra' : target !== undefined ? 'role' : inherited !== undefined ? 'user' : 'sampling'
+  if (effort !== undefined) state.lastEffort = { value: effort, source }
   const selection = {
     provider: route.provider,
     model: route.model,
@@ -1092,10 +1092,11 @@ export function apply(ctx) {
     if (agent === undefined) return transformed
     const state = stateFor(agent)
     const position = nextPosition(agent.session)
-    // Use the selection frozen for this step. Role settings can change while
-    // the loop runs; a tool-continuation step has no inbox claim, so reading
-    // the live role config here would split the prompt/tools from the request.
-    const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
+    // Use the selection frozen for this step, carried on AssembleContext.
+    // Role settings can change while assembly waits; reading the live model or
+    // role config here would split the prompt/tools from the request.
+    const frozen = context?.modelSelection
+    const current = frozen ?? (typeof agent.model?.current === 'function' ? agent.model.current() : undefined)
     const route = {
       provider: current?.provider ?? transformed.variables.provider ?? agent.options?.provider ?? '',
       model: current?.model ?? transformed.variables.model ?? agent.options?.model ?? '',
