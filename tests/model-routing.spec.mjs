@@ -1,14 +1,22 @@
 /**
- * Model routing on dsh 0.2.2: the step selection is frozen after
- * `agent/inbox/claimed`, and an ultrawork override is restored after the
- * prepared request so the next step starts from the user's base.
+ * Model routing on dsh 0.2.2: step selection is frozen after
+ * agent/inbox/claimed. An ultrawork override is kept for the whole turn and
+ * restored once at turn-stopping; prompt/tool/request read the frozen route.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { currentToolModel, restoreAfterRequest, selectRoleRoute } from '../presets/opencode-omo/driver.mjs'
+import { currentToolModel, restoreOnTurnEnd, selectRoleRoute } from '../presets/opencode-omo/driver.mjs'
 
 function state() {
-  return { resolvedRoutes: new Map(), assembledRoutes: new Map(), restoreSelection: undefined, lastRouteTurn: 1, ultraworkTurn: 0 }
+  return {
+    resolvedRoutes: new Map(),
+    assembledRoutes: new Map(),
+    restoreSelection: undefined,
+    restoreTurn: undefined,
+    appliedSelection: undefined,
+    lastRouteTurn: 1,
+    ultraworkTurn: 0,
+  }
 }
 
 function harness(id, initial) {
@@ -18,7 +26,7 @@ function harness(id, initial) {
     options: { ...initial },
     model: { current: () => current, select: value => { current = value } },
   }
-  return { agent, get current() { return current } }
+  return { agent, get current() { return current }, set current(value) { current = value } }
 }
 
 test('the role primary is recorded before step preparation', () => {
@@ -41,25 +49,13 @@ test('a follow-current role records its reasoning effort', () => {
   assert.deepEqual(h.current, { provider: 'session-provider', model: 'gpt-5.5', reasoningEffort: 'medium' })
 })
 
-test('an ultrawork effort override records high without replacing the model', () => {
-  const h = harness('session-ultra-effort', { provider: 'session-provider', model: 'gpt-5.5' })
-  const omoRoles = {
-    roleFor: () => 'sisyphus',
-    configFor: () => ({ fallbackModels: [], ultrawork: { reasoningEffort: 'high' } }),
-    fallbackModelsFor: () => [],
-  }
-  const s = { ...state(), ultraworkTurn: 1 }
-  selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 1, 1)
-  assert.deepEqual(h.current, { provider: 'session-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
-})
-
 test('tool admission prefers the passed step selection', () => {
   const h = harness('session-tools', { provider: 'live-provider', model: 'live-model' })
   const ctx = { get: () => ({ configFor: () => ({ model: { provider: 'role-provider', model: 'role-model' } }) }) }
   assert.equal(currentToolModel(ctx, h.agent, { provider: 'frozen-provider', model: 'frozen-model' }), 'frozen-model')
 })
 
-test('a fixed role primary can be overridden by an ultrawork model', () => {
+test('a fixed role primary is overridden by ultrawork model and effort', () => {
   const h = harness('session-fixed-ultra', { provider: 'role-provider', model: 'claude-opus' })
   const omoRoles = {
     roleFor: () => 'sisyphus',
@@ -74,8 +70,23 @@ test('a fixed role primary can be overridden by an ultrawork model', () => {
   assert.deepEqual(h.current, { provider: 'ultra-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
 })
 
-test('the pre-ultra base is stored and restored after the prepared request', () => {
-  const h = harness('session-restore-model', { provider: 'claude-provider', model: 'claude-opus' })
+test('an ultrawork effort overrides the role primary effort', () => {
+  const h = harness('session-fixed-effort', { provider: 'role-provider', model: 'claude-opus' })
+  const omoRoles = {
+    roleFor: () => 'sisyphus',
+    configFor: () => ({
+      model: { provider: 'role-provider', model: 'claude-opus' },
+      ultrawork: { reasoningEffort: 'high' },
+      fallbackModels: [],
+    }),
+    fallbackModelsFor: () => [],
+  }
+  selectRoleRoute(omoRoles, { ...state(), ultraworkTurn: 1 }, h.agent.session, h.agent, 1, 1)
+  assert.deepEqual(h.current, { provider: 'role-provider', model: 'claude-opus', reasoningEffort: 'high' })
+})
+
+test('the ultrawork override lasts the whole turn and restores once at turn end', () => {
+  const h = harness('session-turn', { provider: 'claude-provider', model: 'claude-opus' })
   const s = { ...state(), ultraworkTurn: 1 }
   const omoRoles = {
     roleFor: () => 'atlas',
@@ -85,25 +96,15 @@ test('the pre-ultra base is stored and restored after the prepared request', () 
   selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 1, 1)
   assert.deepEqual(h.current, { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
   assert.deepEqual(s.restoreSelection, { provider: 'claude-provider', model: 'claude-opus' })
-  restoreAfterRequest(s, h.agent)
+  // A continuation step in the same turn does not claim a message.
+  selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 1, 2)
+  assert.deepEqual(h.current, { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
+  restoreOnTurnEnd(s, h.agent, 1)
   assert.deepEqual(h.current, { provider: 'claude-provider', model: 'claude-opus' })
 })
 
-test('restoring keeps an explicit user effort', () => {
-  const h = harness('session-restore-effort', { provider: 'claude-provider', model: 'claude-opus', reasoningEffort: 'high' })
-  const s = { ...state(), ultraworkTurn: 1 }
-  const omoRoles = {
-    roleFor: () => 'atlas',
-    configFor: () => ({ ultrawork: { reasoningEffort: 'xhigh' }, fallbackModels: [] }),
-    fallbackModelsFor: () => [],
-  }
-  selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 1, 1)
-  restoreAfterRequest(s, h.agent)
-  assert.deepEqual(h.current, { provider: 'claude-provider', model: 'claude-opus', reasoningEffort: 'high' })
-})
-
-test('restoring the same model keeps that model', () => {
-  const h = harness('session-same-ultra', { provider: 'u-provider', model: 'u-model' })
+test('a second claim in the same turn does not overwrite the restore baseline', () => {
+  const h = harness('session-batch', { provider: 'a-provider', model: 'a-model' })
   const s = { ...state(), ultraworkTurn: 1 }
   const omoRoles = {
     roleFor: () => 'atlas',
@@ -111,11 +112,40 @@ test('restoring the same model keeps that model', () => {
     fallbackModelsFor: () => [],
   }
   selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 1, 1)
-  restoreAfterRequest(s, h.agent)
-  assert.deepEqual(h.current, { provider: 'u-provider', model: 'u-model' })
+  selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 1, 1)
+  assert.deepEqual(s.restoreSelection, { provider: 'a-provider', model: 'a-model' })
+  restoreOnTurnEnd(s, h.agent, 1)
+  assert.deepEqual(h.current, { provider: 'a-provider', model: 'a-model' })
 })
 
-test('a first ultrawork turn restores the AgentOptions base', () => {
+test('a user model choice during the turn wins over restore', () => {
+  const h = harness('session-user-turn', { provider: 'a-provider', model: 'a-model' })
+  const s = { ...state(), ultraworkTurn: 1 }
+  const omoRoles = {
+    roleFor: () => 'atlas',
+    configFor: () => ({ ultrawork: { model: { provider: 'u-provider', model: 'u-model' } }, fallbackModels: [] }),
+    fallbackModelsFor: () => [],
+  }
+  selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 1, 1)
+  h.current = { provider: 'c-provider', model: 'c-model' }
+  restoreOnTurnEnd(s, h.agent, 1)
+  assert.deepEqual(h.current, { provider: 'c-provider', model: 'c-model' })
+})
+
+test('a stale restore from an interrupted turn is applied at the next ordinary claim', () => {
+  const h = harness('session-stale', { provider: 'u-provider', model: 'u-model' })
+  const s = {
+    ...state(),
+    restoreSelection: { provider: 'a-provider', model: 'a-model' },
+    restoreTurn: 1,
+    appliedSelection: { provider: 'u-provider', model: 'u-model' },
+  }
+  const omoRoles = { roleFor: () => 'atlas', configFor: () => ({ fallbackModels: [] }), fallbackModelsFor: () => [] }
+  selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 2, 1)
+  assert.deepEqual(h.current, { provider: 'a-provider', model: 'a-model' })
+})
+
+test('a first ultrawork turn restores AgentOptions after turn end', () => {
   const h = harness('session-first-ultra', { provider: 'a-provider', model: 'a-model' })
   const s = { ...state(), ultraworkTurn: 1 }
   const omoRoles = {
@@ -124,13 +154,6 @@ test('a first ultrawork turn restores the AgentOptions base', () => {
     fallbackModelsFor: () => [],
   }
   selectRoleRoute(omoRoles, s, h.agent.session, h.agent, 1, 1)
-  restoreAfterRequest(s, h.agent)
+  restoreOnTurnEnd(s, h.agent, 1)
   assert.deepEqual(h.current, { provider: 'a-provider', model: 'a-model' })
-})
-
-test('an ordinary turn has no pending restore', () => {
-  const h = harness('session-ordinary', { provider: 'a-provider', model: 'a-model' })
-  const s = state()
-  selectRoleRoute({ roleFor: () => 'atlas', configFor: () => ({ fallbackModels: [] }), fallbackModelsFor: () => [] }, s, h.agent.session, h.agent, 1, 1)
-  assert.equal(s.restoreSelection, undefined)
 })

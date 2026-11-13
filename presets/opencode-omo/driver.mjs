@@ -892,6 +892,8 @@ function newState() {
     resolvedRoutes: new Map(),
     assembledRoutes: new Map(),
     restoreSelection: undefined,
+    restoreTurn: undefined,
+    appliedSelection: undefined,
     lastRouteTurn: 0,
     ultraworkTurn: 0,
   }
@@ -967,12 +969,6 @@ function finalRouteFor(omoRoles, state, session, turn, step, variables, agent) {
   return { provider, model, target }
 }
 
-/** Restore the pre-ultra selection after the frozen step request is prepared. */
-export function restoreAfterRequest(state, agent) {
-  if (state.restoreSelection === undefined || typeof agent.model?.select !== 'function') return
-  agent.model.select(state.restoreSelection)
-  state.restoreSelection = undefined
-}
 
 /**
  * Choose the role route for the step that is about to be prepared. dsh
@@ -986,9 +982,23 @@ function sameSelection(left, right) {
     && left?.reasoningEffort === right?.reasoningEffort
 }
 
-export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
+/** Restore the pre-ultra selection once the turn no longer has a claimed step. */
+export function restoreOnTurnEnd(state, agent, turn) {
+  if (state.restoreSelection === undefined || state.restoreTurn !== turn) return
   const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
-  const fallback = current ?? { provider: agent.options?.provider, model: agent.options?.model }
+  if (state.appliedSelection !== undefined && current !== undefined && !sameSelection(current, state.appliedSelection)) {
+    // The user chose another model while the turn ran; keep that choice.
+  } else if (typeof agent.model?.select === 'function') {
+    agent.model.select(state.restoreSelection)
+  }
+  state.restoreSelection = undefined
+  state.restoreTurn = undefined
+  state.appliedSelection = undefined
+}
+
+export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
+  let current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
+  let fallback = current ?? { provider: agent.options?.provider, model: agent.options?.model }
   const roleTarget = primaryModelFor(omoRoles, session)
   const ultra = ultraworkRouteFor(omoRoles, state, session, turn)
   const role = currentRole(omoRoles, session)
@@ -996,20 +1006,32 @@ export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
   let target = roleTarget
 
   if (ultra !== undefined) {
-    // The temporary selection is durable only for this step. The matching
-    // agent/request call restores the pre-override selection before the next
-    // step, so a reload cannot inherit an ultrawork model indefinitely.
-    state.restoreSelection = current ?? fallback
+    // Keep the pre-ultra selection for the whole turn. A later step in the
+    // same turn has no inbox claim, so restoring here would end the override
+    // early; turn-stopping performs the single restore.
+    if (state.restoreTurn !== turn || state.restoreSelection === undefined) {
+      state.restoreSelection = current ?? fallback
+      state.restoreTurn = turn
+    }
+    const base = state.restoreSelection ?? current ?? fallback
     const targetModel = ultra.model ?? roleTarget
-    const provider = targetModel?.provider ?? fallback.provider ?? agent.options?.provider ?? ''
-    const model = targetModel?.model ?? fallback.model ?? agent.options?.model ?? ''
+    const provider = targetModel?.provider ?? base.provider ?? agent.options?.provider ?? ''
+    const model = targetModel?.model ?? base.model ?? agent.options?.model ?? ''
     const sampling = defaultRoleSampling(role, model)
-    const effort = targetModel?.reasoningEffort ?? ultra.reasoningEffort
-      ?? roleTarget?.reasoningEffort ?? current?.reasoningEffort ?? sampling.reasoningEffort
+    const effort = ultra.model?.reasoningEffort ?? ultra.reasoningEffort
+      ?? targetModel?.reasoningEffort ?? current?.reasoningEffort ?? sampling.reasoningEffort
     selection = { provider, model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+    state.appliedSelection = selection
     target = targetModel
   } else {
-    state.restoreSelection = undefined
+    // A pending restore from an interrupted turn is handled here before the
+    // ordinary selection, so a failed agent/request cannot leave it resident.
+    if (state.restoreSelection !== undefined && state.restoreTurn !== turn) {
+      restoreOnTurnEnd(state, agent, state.restoreTurn)
+      current = typeof agent.model?.current === 'function' ? agent.model.current() : current
+      fallback = current ?? fallback
+    }
+    state.appliedSelection = undefined
     if (roleTarget !== undefined) {
       const sampling = defaultRoleSampling(role, roleTarget.model)
       const effort = roleTarget.reasoningEffort ?? sampling.reasoningEffort
@@ -1200,7 +1222,6 @@ export function apply(ctx) {
   ctx.on('agent/request', async ({ agent, turn, step }, next) => {
     const resolved = await next()
     const state = stateFor(agent)
-    restoreAfterRequest(state, agent)
     const planned = state.resolvedRoutes.get(`${turn}:${step}`)
     const route = planned ?? { provider: resolved.provider, model: resolved.model }
     const sampling = defaultRoleSampling(currentRole(omoRoles, agent.session), route.model)
@@ -1209,6 +1230,12 @@ export function apply(ctx) {
       ...(sampling.temperature !== undefined ? { temperature: sampling.temperature } : {}),
     }
   }, { prepend: true })
+
+  // A turn-level ultrawork override ends here, after every step of the turn
+  // has used the temporary selection. A user choice made during the turn wins.
+  ctx.on('agent/turn-stopping', ({ agent, turn }) => {
+    restoreOnTurnEnd(stateFor(agent), agent, turn)
+  })
 
   ctx.on('agent/disposed', ({ agent }) => {
     states.delete(agent.session.id)
