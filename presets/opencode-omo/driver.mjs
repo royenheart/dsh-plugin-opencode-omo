@@ -891,9 +891,7 @@ function newState() {
   return {
     resolvedRoutes: new Map(),
     assembledRoutes: new Map(),
-    baseSelection: undefined,
-    lastAppliedSelection: undefined,
-    ultraActive: false,
+    restoreSelection: undefined,
     lastRouteTurn: 0,
     ultraworkTurn: 0,
   }
@@ -969,6 +967,13 @@ function finalRouteFor(omoRoles, state, session, turn, step, variables, agent) {
   return { provider, model, target }
 }
 
+/** Restore the pre-ultra selection after the frozen step request is prepared. */
+export function restoreAfterRequest(state, agent) {
+  if (state.restoreSelection === undefined || typeof agent.model?.select !== 'function') return
+  agent.model.select(state.restoreSelection)
+  state.restoreSelection = undefined
+}
+
 /**
  * Choose the role route for the step that is about to be prepared. dsh
  * snapshots `agent.model.current()` immediately after `agent/inbox/claimed`,
@@ -981,59 +986,6 @@ function sameSelection(left, right) {
     && left?.reasoningEffort === right?.reasoningEffort
 }
 
-function messageTextOf(event) {
-  return (event?.data?.content ?? [])
-    .filter(block => block?.type === 'text')
-    .map(block => block.text ?? '')
-    .join('\n')
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`[^`]+`/g, '')
-}
-
-/**
- * Recover the pre-ultra base selection after an Agent reload. The durable
- * session log keeps `model/selection` events; when the latest one is preceded
- * by an ultrawork user message, the selection before it is the user's base.
- */
-function recoverBaseSelection(session, current, omoRoles, agent) {
-  const roleConfig = roleConfigFor(omoRoles, session)
-  if (roleConfig?.ultrawork === undefined) return undefined
-  const events = typeof session?.snapshotEvents === 'function' ? session.snapshotEvents() : []
-  let ultraMessage = -1
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === 'user/message' && /\b(ultrawork|ulw)\b/i.test(messageTextOf(events[index]))) {
-      ultraMessage = index
-      break
-    }
-  }
-  if (ultraMessage < 0) return undefined
-  let latestSelection = -1
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === 'model/selection') { latestSelection = index; break }
-  }
-  if (latestSelection > ultraMessage) return undefined
-  const before = []
-  for (let index = 0; index < ultraMessage; index += 1) {
-    if (events[index]?.type === 'model/selection') before.push(events[index].data)
-  }
-  if (before.length >= 2) {
-    const ultraSelection = before[before.length - 1]
-    if (current !== undefined && !sameSelection(current, ultraSelection)) return undefined
-    return before[before.length - 2]
-  }
-  // A fresh session's base may live only in AgentOptions: the first ultrawork
-  // turn writes the temporary selection, so the log has a single selection.
-  if (before.length === 1 && current !== undefined && sameSelection(current, before[0])
-    && typeof agent?.options?.provider === 'string' && typeof agent?.options?.model === 'string') {
-    return {
-      provider: agent.options.provider,
-      model: agent.options.model,
-      ...(agent.options.reasoningEffort === undefined ? {} : { reasoningEffort: agent.options.reasoningEffort }),
-    }
-  }
-  return undefined
-}
-
 export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
   const current = typeof agent.model?.current === 'function' ? agent.model.current() : undefined
   const fallback = current ?? { provider: agent.options?.provider, model: agent.options?.model }
@@ -1043,51 +995,36 @@ export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
   let selection
   let target = roleTarget
 
-  if (roleTarget === undefined) {
-    if (ultra !== undefined) {
-      const userChanged = state.ultraActive && current !== undefined && state.lastAppliedSelection !== undefined
-        && !sameSelection(current, state.lastAppliedSelection)
-      if (!state.ultraActive || userChanged) {
-        state.baseSelection = recoverBaseSelection(session, current, omoRoles, agent) ?? current ?? fallback
-        state.ultraActive = true
-      }
-      const base = state.baseSelection ?? current ?? fallback
-      const modelTarget = ultra.model
-      const provider = modelTarget?.provider ?? base.provider ?? agent.options?.provider ?? ''
-      const model = modelTarget?.model ?? base.model ?? agent.options?.model ?? ''
-      const sampling = defaultRoleSampling(role, model)
-      const effort = modelTarget?.reasoningEffort ?? ultra.reasoningEffort ?? base.reasoningEffort ?? sampling.reasoningEffort
-      selection = { provider, model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
-    } else {
-      if (state.ultraActive) {
-        const userChanged = current !== undefined && state.lastAppliedSelection !== undefined
-          && !sameSelection(current, state.lastAppliedSelection)
-        if (userChanged) state.baseSelection = current
-        state.ultraActive = false
-      } else if (current !== undefined && state.lastAppliedSelection !== undefined
-        && !sameSelection(current, state.lastAppliedSelection)) {
-        state.baseSelection = current
-      }
-      const base = state.baseSelection ?? recoverBaseSelection(session, current, omoRoles, agent) ?? current ?? fallback
-      state.baseSelection = base
-      const sampling = defaultRoleSampling(role, base.model)
-      const effort = base.reasoningEffort ?? sampling.reasoningEffort
-      selection = { provider: base.provider, model: base.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
-    }
-    target = undefined
+  if (ultra !== undefined) {
+    // The temporary selection is durable only for this step. The matching
+    // agent/request call restores the pre-override selection before the next
+    // step, so a reload cannot inherit an ultrawork model indefinitely.
+    state.restoreSelection = current ?? fallback
+    const targetModel = ultra.model ?? roleTarget
+    const provider = targetModel?.provider ?? fallback.provider ?? agent.options?.provider ?? ''
+    const model = targetModel?.model ?? fallback.model ?? agent.options?.model ?? ''
+    const sampling = defaultRoleSampling(role, model)
+    const effort = targetModel?.reasoningEffort ?? ultra.reasoningEffort
+      ?? roleTarget?.reasoningEffort ?? current?.reasoningEffort ?? sampling.reasoningEffort
+    selection = { provider, model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+    target = targetModel
   } else {
-    state.ultraActive = false
-    state.baseSelection = undefined
-    const targetModel = ultra?.model ?? roleTarget
-    const sampling = defaultRoleSampling(role, targetModel.model)
-    const effort = ultra?.model?.reasoningEffort ?? ultra?.reasoningEffort ?? targetModel.reasoningEffort ?? sampling.reasoningEffort
-    selection = { provider: targetModel.provider, model: targetModel.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+    state.restoreSelection = undefined
+    if (roleTarget !== undefined) {
+      const sampling = defaultRoleSampling(role, roleTarget.model)
+      const effort = roleTarget.reasoningEffort ?? sampling.reasoningEffort
+      selection = { provider: roleTarget.provider, model: roleTarget.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+    } else {
+      const sampling = defaultRoleSampling(role, fallback.model)
+      const effort = current?.reasoningEffort ?? sampling.reasoningEffort
+      selection = { provider: fallback.provider, model: fallback.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
+      target = undefined
+    }
   }
 
   if (selection.provider !== '' && selection.model !== '' && typeof agent.model?.select === 'function') {
     agent.model.select(selection)
   }
-  state.lastAppliedSelection = selection
   return { provider: selection.provider, model: selection.model, target }
 }
 
@@ -1263,6 +1200,7 @@ export function apply(ctx) {
   ctx.on('agent/request', async ({ agent, turn, step }, next) => {
     const resolved = await next()
     const state = stateFor(agent)
+    restoreAfterRequest(state, agent)
     const planned = state.resolvedRoutes.get(`${turn}:${step}`)
     const route = planned ?? { provider: resolved.provider, model: resolved.model }
     const sampling = defaultRoleSampling(currentRole(omoRoles, agent.session), route.model)
