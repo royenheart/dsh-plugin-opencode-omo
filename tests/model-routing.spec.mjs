@@ -209,8 +209,8 @@ test('cold recovery restores the model before an ultrawork selection from the se
     id: 'session-cold',
     snapshotEvents: () => [
       { type: 'model/selection', data: { provider: 'claude-provider', model: 'claude-opus' } },
-      { type: 'user/message', data: { content: [{ type: 'text', text: 'use ultrawork' }] } },
       { type: 'model/selection', data: { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'use ultrawork' }] } },
     ],
   }
   let current = { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' }
@@ -234,4 +234,46 @@ test('an ultrawork model effort is honored', () => {
   }
   selectRoleRoute(omoRoles, { ...state(), ultraworkTurn: 1 }, agent.session, agent, 1, 1)
   assert.deepEqual(selected, { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' })
+})
+
+
+test('cold recovery keeps a newer user model selection', () => {
+  const session = {
+    id: 'session-cold-user-change',
+    snapshotEvents: () => [
+      { type: 'model/selection', data: { provider: 'claude-provider', model: 'claude-opus' } },
+      { type: 'model/selection', data: { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'use ultrawork' }] } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'ordinary next turn' }] } },
+      { type: 'model/selection', data: { provider: 'new-provider', model: 'new-model', reasoningEffort: 'low' } },
+    ],
+  }
+  let current = { provider: 'new-provider', model: 'new-model', reasoningEffort: 'low' }
+  const agent = { session, options: current, model: { current: () => current, select: value => { current = value } } }
+  const omoRoles = { roleFor: () => 'atlas', configFor: () => ({ fallbackModels: [] }), fallbackModelsFor: () => [] }
+  selectRoleRoute(omoRoles, state(), session, agent, 3, 1)
+  assert.deepEqual(current, { provider: 'new-provider', model: 'new-model', reasoningEffort: 'low' })
+})
+
+test('a reloaded ultrawork turn saves the recovered base, not the temporary model', () => {
+  const session = {
+    id: 'session-cold-ultra-again',
+    snapshotEvents: () => [
+      { type: 'model/selection', data: { provider: 'claude-provider', model: 'claude-opus' } },
+      { type: 'model/selection', data: { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' } },
+      { type: 'user/message', data: { content: [{ type: 'text', text: 'use ultrawork' }] } },
+    ],
+  }
+  let current = { provider: 'gpt-provider', model: 'gpt-5.5', reasoningEffort: 'high' }
+  const agent = { session, options: current, model: { current: () => current, select: value => { current = value } } }
+  const s = { ...state(), ultraworkTurn: 1 }
+  const omoRoles = {
+    roleFor: () => 'atlas',
+    configFor: () => ({ ultrawork: { model: { provider: 'gpt-provider', model: 'gpt-5.5' }, reasoningEffort: 'high' } }),
+    fallbackModelsFor: () => [],
+  }
+  selectRoleRoute(omoRoles, s, session, agent, 2, 1)
+  s.ultraworkTurn = 0
+  selectRoleRoute(omoRoles, s, session, agent, 3, 1)
+  assert.deepEqual(current, { provider: 'claude-provider', model: 'claude-opus' })
 })

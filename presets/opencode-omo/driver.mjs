@@ -993,23 +993,30 @@ function messageTextOf(event) {
  * session log keeps `model/selection` events; when the latest one is preceded
  * by an ultrawork user message, the selection before it is the user's base.
  */
-function recoverBaseSelection(session) {
+function recoverBaseSelection(session, current) {
   const events = typeof session?.snapshotEvents === 'function' ? session.snapshotEvents() : []
-  let latest = -1
+  let ultraMessage = -1
   for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === 'model/selection') { latest = index; break }
+    if (events[index]?.type === 'user/message' && /\b(ultrawork|ulw)\b/i.test(messageTextOf(events[index]))) {
+      ultraMessage = index
+      break
+    }
   }
-  if (latest <= 0) return undefined
-  let previous
-  for (let index = latest - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === 'model/selection') { previous = events[index].data; break }
+  if (ultraMessage < 0) return undefined
+  let latestSelection = -1
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]?.type === 'model/selection') { latestSelection = index; break }
   }
-  let user
-  for (let index = latest - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === 'user/message') { user = events[index]; break }
+  // A later selection is the user's newer choice, not the pre-ultra baseline.
+  if (latestSelection > ultraMessage) return undefined
+  const before = []
+  for (let index = 0; index < ultraMessage; index += 1) {
+    if (events[index]?.type === 'model/selection') before.push(events[index].data)
   }
-  if (previous === undefined || user === undefined || !/\b(ultrawork|ulw)\b/i.test(messageTextOf(user))) return undefined
-  return previous
+  if (before.length < 2) return undefined
+  const ultraSelection = before[before.length - 1]
+  if (current !== undefined && !sameSelection(current, ultraSelection)) return undefined
+  return before[before.length - 2]
 }
 
 export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
@@ -1026,7 +1033,7 @@ export function selectRoleRoute(omoRoles, state, session, agent, turn, step) {
       const userChanged = state.ultraActive && current !== undefined && state.lastAppliedSelection !== undefined
         && !sameSelection(current, state.lastAppliedSelection)
       if (!state.ultraActive || userChanged) {
-        state.baseSelection = current ?? fallback
+        state.baseSelection = recoverBaseSelection(session, current) ?? current ?? fallback
         state.ultraActive = true
       }
       const base = state.baseSelection ?? current ?? fallback
