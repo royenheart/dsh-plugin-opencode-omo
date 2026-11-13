@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   dsh-migrate:
-    uses: royenheart/dsh-migrate-bot/.github/workflows/migrate.yml@v1.0.0-rc.2
+    uses: royenheart/dsh-migrate-bot/.github/workflows/migrate.yml@v1.0.0-rc.5
     with:
       target: ${{ inputs.dsh_release || '' }}
       force: ${{ inputs.migrate_again || false }}
